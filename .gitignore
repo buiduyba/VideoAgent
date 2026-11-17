@@ -1,0 +1,10 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+config.json
+*.sqlite
+*.egg-info/
+.pytest_cache/
+agents/*/lessons_pending.jsonl

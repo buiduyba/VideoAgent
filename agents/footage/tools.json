@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "_ghi_chu": {
+    "A": "Chế độ A: ảnh xem trước từng clip (1 hình/2 s) + đọc chữ trên ảnh/logo; chưa có lệnh đóng gói.",
+    "C": "Chế độ C: xem references/che-do-c.md của skill. Script có sẵn trong scripts/montage: shot_scan.py, vad_speech.py (Bước 1-2).",
+    "S": "Chế độ S: skill-video-dao-tao-tu-slide (nhận slide), chưa tích hợp."
+  },
+  "actions": {
+    "prep": {
+      "A": [],
+      "C": [],
+      "S": [],
+      "B": [
+        {
+          "name": "prep",
+          "cmd": [
+            "py",
+            "{SKILL}/scripts/make_video.py",
+            "prep",
+            "{footage}",
+            "--brand",
+            "{brand}"
+          ],
+          "timeout": 3600,
+          "report_files": [
+            "{edit_dir}/inventory.md",
+            "{edit_dir}/takes_packed.md"
+          ]
+        }
+      ]
+    }
+  }
+}

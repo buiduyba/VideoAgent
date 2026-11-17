@@ -1,0 +1,15 @@
+{
+  "id": "phong-van-khach",
+  "name_vi": "Video phỏng vấn khách hàng",
+  "suggested_mode": "B",
+  "target_seconds": 40,
+  "mode_note": "người nói là nội dung chính",
+  "required_brief": [
+    "extra.consent"
+  ],
+  "labels": {
+    "extra.consent": "Khách đã đồng ý cho quay và đăng chưa? (ghi rõ)"
+  },
+  "notes": "Phải có đồng ý của khách trước khi dùng hình ảnh và giọng nói.",
+  "status": "nhap"
+}

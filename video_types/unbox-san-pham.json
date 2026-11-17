@@ -1,0 +1,9 @@
+{
+  "id": "unbox-san-pham",
+  "name_vi": "Video unbox sản phẩm",
+  "suggested_mode": "auto",
+  "target_seconds": 36,
+  "mode_note": "chưa rõ có lời hay chỉ cảnh tay thao tác nên để hệ đề xuất rồi người giao xác nhận",
+  "notes": "Mở hộp, giới thiệu sản phẩm.",
+  "status": "nhap"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "gioi-thieu-san-pham",
+  "name_vi": "Video giới thiệu sản phẩm (USP, công dụng)",
+  "suggested_mode": "A",
+  "target_seconds": 30,
+  "mode_note": "clip/ảnh + kịch bản + lời đọc",
+  "required_brief": [
+    "benefits_allowed"
+  ],
+  "notes": "Công dụng chỉ ghi đúng phần được phép.",
+  "status": "nhap"
+}

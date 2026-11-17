@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "_ghi_chu": {
+    "B": "critic_preview (B): cùng critic.py của skill, soi bản xem trước 540 px (critic.py tự co ảnh nên không phụ thuộc độ phân giải; đếm khung theo 30 fps nên adapter đã kiểm fps). Cờ soft: chạy hỏng thì ghi chú và đi tiếp. Khuyến nghị: cho critic.py ghi thêm report.json {findings:[...]} để khỏi nhờ AI đọc lại report.md.",
+    "C": "Chế độ C: xem references/che-do-c.md của skill. Script có sẵn trong scripts/montage: critic_hoicho.py."
+  },
+  "actions": {
+    "critic_preview": {
+      "A": [],
+      "B": [
+        {
+          "name": "critic",
+          "cmd": [
+            "py",
+            "{SKILL}/scripts/critic.py",
+            "{target}",
+            "{project_dir}",
+            "{critic_out}"
+          ],
+          "timeout": 1800,
+          "soft": true,
+          "report_files": [
+            "{critic_out}/report.md"
+          ]
+        }
+      ],
+      "C": [],
+      "S": []
+    },
+    "critic_final": {
+      "A": [],
+      "C": [],
+      "S": [],
+      "B": [
+        {
+          "name": "critic",
+          "cmd": [
+            "py",
+            "{SKILL}/scripts/critic.py",
+            "{target}",
+            "{project_dir}",
+            "{critic_out}"
+          ],
+          "timeout": 1800,
+          "report_files": [
+            "{critic_out}/report.md"
+          ]
+        }
+      ]
+    }
+  }
+}

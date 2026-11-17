@@ -1,0 +1,9 @@
+{
+  "id": "koc-review",
+  "name_vi": "Video KOC review / trải nghiệm",
+  "suggested_mode": "B",
+  "target_seconds": 30,
+  "mode_note": "người nói trước máy là nội dung chính, cắt chính xác theo từ",
+  "notes": "Lợi ích chỉ lấy theo lời KOC; bỏ các câu hứa công dụng mạnh.",
+  "status": "nhap"
+}

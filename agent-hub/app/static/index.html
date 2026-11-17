@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Hub</title>
+<style>
+:root{--bg:#faf9f5;--card:#fff;--soft:#f1efe8;--text:#1f1e1d;--text2:#5f5e5a;--muted:#888780;--line:#e3e1d8;
+--acc:#185fa5;--accbg:#e6f1fb;--ok:#3b6d11;--okbg:#eaf3de;--warn:#854f0b;--warnbg:#faeeda;--bad:#a32d2d;--badbg:#fcebeb}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1b1a;--card:#262524;--soft:#2f2e2c;--text:#f0eee6;--text2:#b4b2a9;--muted:#888780;--line:#3a3937;
+--acc:#85b7eb;--accbg:#0c447c;--ok:#c0dd97;--okbg:#27500a;--warn:#fac775;--warnbg:#633806;--bad:#f7c1c1;--badbg:#791f1f}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 system-ui,"Segoe UI",sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:20px;font-weight:600;margin:0}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.mode{font-size:12px;color:var(--text2);background:var(--soft);padding:3px 10px;border-radius:8px}
+.brief{display:flex;gap:8px;margin-bottom:14px}
+.brief textarea{flex:1;min-height:56px;resize:vertical;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font:inherit}
+button{font:inherit;padding:8px 16px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}
+button:hover{background:var(--soft)}
+button.pri{background:var(--acc);color:var(--card);border-color:var(--acc)}
+button.pri:hover{opacity:.9}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .4s}
+.flow{display:flex;align-items:stretch;gap:6px;margin:14px 0;overflow-x:auto;padding-bottom:4px}
+.node{flex:1;min-width:118px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer}
+.node.sel{outline:2px solid var(--acc)}
+.node b{display:block;font-size:14px}
+.node small{display:block;color:var(--text2);font-size:12px;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arrow{align-self:center;color:var(--muted)}
+.bd{font-size:12px;padding:2px 8px;border-radius:8px;white-space:nowrap}
+.s-pending{background:var(--soft);color:var(--text2)}
+.s-running{background:var(--accbg);color:var(--acc)}
+.s-done{background:var(--okbg);color:var(--ok)}
+.s-approval,.s-rework{background:var(--warnbg);color:var(--warn)}
+.s-failed{background:var(--badbg);color:var(--bad)}
+.grid{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.3fr);gap:14px}
+@media (max-width:760px){.grid{grid-template-columns:1fr}}
+.row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+.mut{color:var(--text2);font-size:13px}
+.lg{font:12px/1.5 ui-monospace,Consolas,monospace;color:var(--text2);padding:4px 0;border-bottom:1px solid var(--line)}
+.art{background:var(--soft);border-radius:8px;padding:10px 12px;margin-top:10px;white-space:pre-wrap;font-size:13px}
+.banner{display:none;background:var(--warnbg);color:var(--warn);border-radius:10px;padding:12px 14px;margin-bottom:12px;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.banner.on{display:flex}
+.banner.done{background:var(--okbg);color:var(--ok)}
+.banner.bad{background:var(--badbg);color:var(--bad)}
+.list-item{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.list-item.sel b{color:var(--acc)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><h1>Agent Hub</h1><span class="mode" id="mode">...</span></div>
+  <div class="brief">
+    <textarea id="brief">Làm video 45 giây giới thiệu gian hàng của công ty tại hội chợ 20/11, đăng Facebook Reels và TikTok.</textarea>
+    <button class="pri" id="go">Chạy</button>
+  </div>
+  <div class="banner" id="banner"><span id="bmsg"></span><span id="bbtn"></span></div>
+  <div class="card">
+    <div class="row"><span class="mut" id="meta">Chưa có lần chạy nào</span><b id="tot">0%</b></div>
+    <div class="bar" style="margin-top:8px"><i id="totbar"></i></div>
+    <div class="flow" id="flow"></div>
+  </div>
+  <div class="grid" style="margin-top:14px">
+    <div class="card"><div class="mut" style="margin-bottom:6px">Hoạt động mới nhất của mọi agent</div><div id="feed"></div></div>
+    <div class="card" id="detail"></div>
+  </div>
+</div>
+<script>
+const STAT={pending:'Chờ',running:'Đang chạy',done:'Hoàn thành',approval:'Chờ duyệt',rework:'Yêu cầu sửa',failed:'Dừng'};
+let agents={},order=[],runId=null,es=null,sel=null,pinned=false,runStatus='',feed=[];
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function boot(){
+  const m=await (await fetch('/api/meta')).json();
+  $('mode').textContent='Chế độ: '+m.mode;
+  order=m.agents.map(a=>a.id);
+  reset(m.agents);
+  render();
+}
+function reset(list){
+  agents={};
+  (list||order.map(id=>({id,name:agents[id]?.name,role:agents[id]?.role}))).forEach(a=>{
+    agents[a.id]={id:a.id,name:a.name,role:a.role,status:'pending',progress:0,task:'Chờ',tool:'',tokens:0,logs:[],artifact:null};
+  });
+  feed=[];sel=order[0];pinned=false;runStatus='';
+}
+async function start(){
+  const brief=$('brief').value.trim(); if(!brief) return;
+  if(es) es.close();
+  const meta=await (await fetch('/api/meta')).json(); reset(meta.agents);
+  const r=await (await fetch('/api/runs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brief})})).json();
+  runId=r.run_id; runStatus='running'; render();
+  es=new EventSource('/api/runs/'+runId+'/events');
+  es.onmessage=e=>{const ev=JSON.parse(e.data); apply(ev); render();};
+  es.onerror=()=>{ if(['done','cancelled','error'].includes(runStatus)) es.close(); };
+}
+function apply(ev){
+  if(ev.type==='run'){runStatus=ev.status; $('tot').textContent=ev.overall+'%'; $('totbar').style.width=ev.overall+'%'; return;}
+  const a=agents[ev.agent]; if(!a) return;
+  Object.assign(a,{status:ev.status,progress:ev.progress,task:ev.task,tool:ev.tool,tokens:ev.tokens});
+  if(ev.log){a.logs.push([ev.ts,ev.log]); feed.unshift([ev.ts,a.name,ev.log]); feed=feed.slice(0,40);}
+  if(ev.artifact) a.artifact=ev.artifact;
+  $('tot').textContent=ev.overall+'%'; $('totbar').style.width=ev.overall+'%';
+  if(!pinned && ['running','approval','rework'].includes(ev.status)) sel=ev.agent;
+}
+async function decide(ok){
+  await fetch('/api/runs/'+runId+'/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({approved:ok})});
+}
+function render(){
+  const list=order.map(id=>agents[id]);
+  const done=list.filter(a=>a.status==='done').length, tok=list.reduce((s,a)=>s+a.tokens,0);
+  $('meta').textContent=runId?`Lần chạy ${runId}: ${done}/${list.length} agent xong, ${tok.toLocaleString('vi-VN')} token`:'Chưa có lần chạy nào';
+  $('flow').innerHTML=list.map((a,i)=>`<div class="node ${a.id===sel?'sel':''}" data-id="${a.id}"><b>${esc(a.name)}</b><small>${esc(a.task)}</small><span class="bd s-${a.status}">${STAT[a.status]}</span><div class="bar" style="margin-top:8px"><i style="width:${a.progress}%"></i></div></div>`+(i<list.length-1?'<span class="arrow">&rarr;</span>':'')).join('');
+  document.querySelectorAll('.node').forEach(n=>n.onclick=()=>{sel=n.dataset.id;pinned=true;render();});
+  $('feed').innerHTML=feed.length?feed.map(f=>`<div class="lg">${f[0]}  <b>${esc(f[1])}</b>: ${esc(f[2])}</div>`).join(''):'<div class="mut">Chưa có hoạt động. Bấm Chạy để bắt đầu.</div>';
+  const a=agents[sel];
+  if(a){
+    $('detail').innerHTML=`<div class="row"><b style="font-size:16px">${esc(a.name)}</b><span class="bd s-${a.status}">${STAT[a.status]}</span></div>
+    <div class="mut">${esc(a.role||'')} · Công cụ: ${esc(a.tool||'chưa dùng')} · ${a.tokens.toLocaleString('vi-VN')} token</div>
+    <div style="margin:8px 0 4px">Đang làm: ${esc(a.task)}</div>
+    <div class="bar"><i style="width:${a.progress}%"></i></div>
+    ${a.artifact?`<div class="art"><b>${esc(a.artifact.title)}</b>\n${esc(a.artifact.text)}</div>`:''}
+    <div class="mut" style="margin-top:12px">Nhật ký</div>
+    ${a.logs.length?a.logs.map(l=>`<div class="lg">${l[0]}  ${esc(l[1])}</div>`).join(''):'<div class="lg">Chưa có hoạt động</div>'}`;
+  }
+  const b=$('banner'); b.className='banner';
+  if(runStatus==='waiting_approval'){
+    b.classList.add('on'); $('bmsg').textContent='Video và caption đã sẵn sàng. Cần anh duyệt trước khi đăng.';
+    $('bbtn').innerHTML='<button class="pri" id="yes">Duyệt và đăng</button> <button id="no">Từ chối</button>';
+    $('yes').onclick=()=>decide(true); $('no').onclick=()=>decide(false);
+  }else if(runStatus==='done'){b.classList.add('on','done'); $('bmsg').textContent='Hoàn thành. Nhật ký đã ghi vào thư mục Runs của vault.'; $('bbtn').innerHTML='';}
+  else if(runStatus==='cancelled'){b.classList.add('on','bad'); $('bmsg').textContent='Đã dừng, không đăng bài.'; $('bbtn').innerHTML='';}
+  else if(runStatus==='error'){b.classList.add('on','bad'); $('bmsg').textContent='Có lỗi, xem nhật ký của Supervisor.'; $('bbtn').innerHTML='';}
+}
+$('go').onclick=start;
+boot();
+</script>
+</body>
+</html>

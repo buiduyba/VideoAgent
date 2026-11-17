@@ -1,0 +1,19 @@
+{
+  "id": "hoi-cho-ban-hang",
+  "name_vi": "Video hội chợ / gian hàng",
+  "suggested_mode": "C",
+  "target_seconds": 45,
+  "mode_note": "footage cảnh nền, ít lời, dựng theo beat nhạc",
+  "required_brief": [
+    "offer_text",
+    "offer_deadline",
+    "extra.event",
+    "extra.narration"
+  ],
+  "labels": {
+    "extra.event": "Tên + địa điểm + ngày hội chợ",
+    "extra.narration": "Lời dẫn: (a) chữ + nhạc + phỏng vấn / (b) giọng AI / (c) tự thu âm"
+  },
+  "notes": "Bán hàng là chính, có nhận diện thương hiệu. Facebook Reels + TikTok 1080x1920.",
+  "status": "nhap"
+}

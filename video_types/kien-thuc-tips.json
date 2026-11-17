@@ -1,0 +1,15 @@
+{
+  "id": "kien-thuc-tips",
+  "name_vi": "Video kiến thức & tips",
+  "suggested_mode": "A",
+  "target_seconds": 45,
+  "mode_note": "clip/ảnh minh họa + lời đọc",
+  "required_brief": [
+    "extra.topic"
+  ],
+  "labels": {
+    "extra.topic": "Chủ đề / thông điệp chính"
+  },
+  "notes": "Chia sẻ, hướng dẫn; tránh hứa kết quả.",
+  "status": "nhap"
+}

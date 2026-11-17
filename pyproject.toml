@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vidagents"
+version = "0.1.0"
+description = "Khung multi-agent dựng video (LangGraph) cho Teams Ads: 1 điều phối + 4 agent, skill thả vào sau"
+requires-python = ">=3.10"
+dependencies = [
+  "langgraph>=1.0",
+  "langgraph-checkpoint-sqlite>=2.0",
+  "pydantic>=2.5",
+  "anthropic>=0.40",
+  "python-telegram-bot>=21",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+vidagents = "vidagents.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+vidagents = ["web/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

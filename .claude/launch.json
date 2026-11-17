@@ -1,0 +1,16 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "vidagents-dashboard",
+      "runtimeExecutable": "C:\\Users\\bdduy\\.vidagents-venv\\Scripts\\python.exe",
+      "runtimeArgs": [
+        "-X", "utf8",
+        "-m", "vidagents.cli", "dashboard",
+        "--demo-dir", "C:\\Users\\bdduy\\vidagents-dash-demo",
+        "--port", "8765"
+      ],
+      "port": 8765
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "footage_root": "//TEN-NAS/thu-muc-footage",
+  "work_root": "D:/VideoProjects/_work",
+  "work_keep_hours": 24,
+  "work_reserve_gb": 5,
+  "projects_root": "D:/VideoProjects",
+  "jobs_db": "D:/VideoProjects/_jobs/jobs.sqlite",
+  "checkpoint_db": "D:/VideoProjects/_jobs/checkpoints.sqlite",
+  "locks_dir": "D:/VideoProjects/_jobs/locks",
+  "agents_dir": "agents",
+  "video_types_dir": "video_types",
+  "skill_dir": "C:/Users/<tên-bạn>/.claude/skills/skill-edit-video-hoi-cho",
+  "render_slots": 1,
+  "max_critic_rounds": 2,
+  "max_revisions": 5,
+  "max_info_rounds": 3,
+  "light_workers": 4,
+  "models": {
+    "default": "claude-sonnet-5-5",
+    "script": null,
+    "critic": null
+  },
+  "ffmpeg": "ffmpeg",
+  "ffprobe": "ffprobe",
+  "anthropic_key_env": "ANTHROPIC_API_KEY",
+  "telegram": {
+    "token_env": "TELEGRAM_BOT_TOKEN",
+    "allowed_user_ids": [],
+    "admin_ids": [],
+    "max_file_send_mb": 45
+  },
+  "max_cost_per_job_usd": null,
+  "pricing": {
+    "claude-sonnet-5-5": {
+      "in": 2.0,
+      "out": 10.0,
+      "cache_read": 0.1,
+      "cache_write": 2.5
+    }
+  },
+  "stall_minutes": 60,
+  "watchdog_every_s": 300,
+  "preview_quality": "",
+  "_ghi_chu_pricing": "pricing: USD cho 1 triệu token. Số mặc định trong code chỉ là THAM KHẢO (nguồn thứ ba, chưa đối chiếu trang giá chính thức của Anthropic): phải kiểm rồi điền lại ở đây. Model thiếu giá thì chỉ đếm token, không đoán tiền. max_cost_per_job_usd: trần chi phí AI mỗi job (null = không giới hạn).",
+  "_ghi_chu_canh": "stall_minutes: quá số phút này không nhúc nhích thì báo Telegram. preview_quality: để trống; điền sau khi xem `npx.cmd hyperframes render --help`."
+}

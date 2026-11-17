@@ -1,0 +1,15 @@
+{
+  "id": "feedback-thuc-te",
+  "name_vi": "Video feedback thực tế của khách",
+  "suggested_mode": "B",
+  "target_seconds": 29,
+  "mode_note": "lời khách là nội dung chính",
+  "required_brief": [
+    "extra.consent"
+  ],
+  "labels": {
+    "extra.consent": "Khách đã đồng ý cho dùng feedback chưa? (ghi rõ)"
+  },
+  "notes": "Chỉ dùng feedback thật, không chỉnh nội dung.",
+  "status": "nhap"
+}

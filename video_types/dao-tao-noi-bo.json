@@ -1,0 +1,17 @@
+{
+  "id": "dao-tao-noi-bo",
+  "name_vi": "Video hướng dẫn / đào tạo nội bộ",
+  "suggested_mode": "S",
+  "target_seconds": 200,
+  "mode_note": "đã có skill riêng dựng từ slide (skill-video-dao-tao-tu-slide); chế độ S chưa có lệnh, chờ thả skill vào",
+  "required_brief": [
+    "extra.audience",
+    "extra.source_slides"
+  ],
+  "labels": {
+    "extra.audience": "Đối tượng xem",
+    "extra.source_slides": "File slide nguồn"
+  },
+  "notes": "Dùng nội bộ, không đăng công khai.",
+  "status": "nhap"
+}

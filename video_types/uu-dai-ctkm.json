@@ -1,0 +1,14 @@
+{
+  "id": "uu-dai-ctkm",
+  "name_vi": "Video ưu đãi & chương trình khuyến mãi",
+  "suggested_mode": "A",
+  "target_seconds": 20,
+  "mode_note": "chữ + hình sản phẩm + lời đọc ngắn",
+  "required_brief": [
+    "offer_text",
+    "offer_deadline",
+    "where_to_buy"
+  ],
+  "notes": "Giá, ưu đãi, hạn phải đúng từng chữ theo brief.",
+  "status": "nhap"
+}

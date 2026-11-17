@@ -1,0 +1,15 @@
+{
+  "id": "su-kien-highlight",
+  "name_vi": "Video highlight sự kiện (tổng hợp, recap)",
+  "suggested_mode": "C",
+  "target_seconds": 90,
+  "mode_note": "nhiều cảnh nền, dựng theo beat",
+  "required_brief": [
+    "extra.event"
+  ],
+  "labels": {
+    "extra.event": "Tên + địa điểm + ngày sự kiện"
+  },
+  "notes": "Recap, không phải quảng cáo bán hàng trực tiếp.",
+  "status": "nhap"
+}

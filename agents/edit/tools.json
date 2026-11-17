@@ -1,0 +1,104 @@
+{
+  "schema": 1,
+  "_ghi_chu": {
+    "B": "preview (B): adapter của khung (adapters/preview_b.py) gọi `hyperframes render` của skill rồi ép xuống 540 px để critic + người duyệt xem trước duyệt 2. Cờ soft: hỏng thì job vẫn đi tiếp và báo rõ. rebuild chưa khai báo (skill build đã dựng lại được bằng --skip-base khi chỉ đổi chữ).",
+    "C": "Chế độ C: xem references/che-do-c.md của skill. Script có sẵn trong scripts/montage: beat_grid, color_match, export_clips, reframe, assemble, caps_hoicho, build_hf (build); finish.py (render).",
+    "A": "Chế độ A: xem references/che-do-a.md; TTS ElevenLabs cần requires=cost_ok.",
+    "S": "chưa tích hợp"
+  },
+  "actions": {
+    "build": {
+      "A": [],
+      "C": [],
+      "S": [],
+      "B": [
+        {
+          "name": "build",
+          "cmd": [
+            "py",
+            "{SKILL}/scripts/make_video.py",
+            "build",
+            "{footage}",
+            "--brand",
+            "{brand}",
+            "--name",
+            "{name}",
+            "{*style_args}",
+            "--no-preview"
+          ],
+          "timeout": 3600,
+          "heavy": true,
+          "requires": "duyet_1",
+          "outputs": {
+            "project_dir": "{project_dir}"
+          }
+        }
+      ]
+    },
+    "render": {
+      "A": [],
+      "C": [],
+      "S": [],
+      "B": [
+        {
+          "name": "render",
+          "cmd": [
+            "py",
+            "{SKILL}/scripts/make_video.py",
+            "render",
+            "{footage}",
+            "--name",
+            "{name}"
+          ],
+          "timeout": 3600,
+          "heavy": true,
+          "requires": "duyet_2",
+          "outputs": {
+            "final": "{edit_dir}/{name}-1080x1920.mp4",
+            "light": "{edit_dir}/{name}-1080x1920-nhe.mp4",
+            "srt": "{edit_dir}/{name}.srt"
+          }
+        }
+      ]
+    },
+    "rebuild": {
+      "A": [],
+      "B": [],
+      "C": [],
+      "S": []
+    },
+    "preview": {
+      "A": [],
+      "B": [
+        {
+          "name": "preview",
+          "cmd": [
+            "py",
+            "{ADAPTERS}/preview_b.py",
+            "--project",
+            "{project_dir}",
+            "--name",
+            "{name}",
+            "--edit-dir",
+            "{edit_dir}",
+            "--ffmpeg",
+            "{FFMPEG}",
+            "--ffprobe",
+            "{FFPROBE}",
+            "{*quality_args}"
+          ],
+          "timeout": 3600,
+          "heavy": true,
+          "soft": true,
+          "retry": false,
+          "requires": "duyet_1",
+          "outputs": {
+            "preview": "{edit_dir}/{name}-xemtruoc.mp4"
+          }
+        }
+      ],
+      "C": [],
+      "S": []
+    }
+  }
+}
