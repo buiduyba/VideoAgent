@@ -312,4 +312,4 @@ def test_five_agents_have_skill_and_tools_manifest():
 def test_doctor_reports_declared_commands():
     text = "\n".join(doctor(_cfg()))
     assert "footage.prep" in text and "✔" in text and "✘" in text
-    assert "đang là bản tạm" in text
+    assert "đang là bản tạm" not in text  # từ 19/11 SKILL.md của agent sinh từ skill thật (tools/sync_vidagents.py)
