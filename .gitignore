@@ -8,3 +8,5 @@ config.json
 *.egg-info/
 .pytest_cache/
 agents/*/lessons_pending.jsonl
+.env.*
+!.env.example
