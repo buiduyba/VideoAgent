@@ -1,6 +1,6 @@
 """Sơ đồ luồng dưới dạng dữ liệu thuần (không phụ thuộc LangGraph) để test được và chuyển thành graph ở graph.py.
 
-intake → extract_brief ⇄ ask_info → footage → script ⇄ ask_info → approve_1 → edit_build → critic ⇄ edit_fix
+intake → extract_brief ⇄ ask_info → scribe_gate → footage → script ⇄ ask_info → approve_1 → edit_build → critic ⇄ edit_fix
        → approve_2 → render → critic(final) → deliver → lessons → lesson_gate
 Mọi chỗ vượt giới hạn vòng lặp đều đi qua `escalate` (hỏi người giao), không tự quyết.
 """
@@ -26,7 +26,7 @@ def build_spec(cfg: Config) -> tuple[dict[str, str], dict[str, tuple[Callable[[d
 
     def after_extract(s):
         if not s.get("info_request"):
-            return "footage"
+            return "scribe_gate"
         return "cancel_end" if s.get("info_rounds", 0) >= cfg.max_info_rounds else "ask_info"
 
     def after_ask_info(s):
@@ -52,7 +52,7 @@ def build_spec(cfg: Config) -> tuple[dict[str, str], dict[str, tuple[Callable[[d
             return "escalate"
         if g == "approve":
             return "edit_build"
-        return "footage" if s.get("mode_changed") else "script"
+        return "scribe_gate" if s.get("mode_changed") else "script"
 
     def after_critic(s):
         if s.get("escalation"):
@@ -83,6 +83,14 @@ def build_spec(cfg: Config) -> tuple[dict[str, str], dict[str, tuple[Callable[[d
         to = s.get("resume_to")
         return to if to in VALID_RESUME else "approve_2"
 
+    def after_scribe_gate(s):
+        g = s.get("gate_result")
+        if g == "cancel":
+            return "cancel_end"
+        if g == "ignored":
+            return "scribe_gate"
+        return "footage"
+
     def after_lessons(s):
         return "lesson_gate" if s.get("lesson_items") else END
 
@@ -92,10 +100,11 @@ def build_spec(cfg: Config) -> tuple[dict[str, str], dict[str, tuple[Callable[[d
     }
     cond = {
         "intake": (after_intake, ["cancel_end", "extract_brief"]),
-        "extract_brief": (after_extract, ["footage", "ask_info", "cancel_end"]),
+        "extract_brief": (after_extract, ["scribe_gate", "ask_info", "cancel_end"]),
+        "scribe_gate": (after_scribe_gate, ["cancel_end", "scribe_gate", "footage"]),
         "ask_info": (after_ask_info, ["cancel_end", "ask_info", "extract_brief", "script"]),
         "script": (after_script, ["ask_info", "approve_1"]),
-        "approve_1": (after_approve_1, ["cancel_end", "approve_1", "escalate", "edit_build", "footage", "script"]),
+        "approve_1": (after_approve_1, ["cancel_end", "approve_1", "escalate", "edit_build", "scribe_gate", "script"]),
         "critic": (after_critic, ["escalate", "edit_fix", "approve_2", "deliver"]),
         "edit_fix": (after_edit_fix, ["escalate", "critic"]),
         "approve_2": (after_approve_2, ["cancel_end", "approve_2", "escalate", "render", "edit_fix"]),

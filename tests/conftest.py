@@ -37,6 +37,7 @@ def make_env(tmp_path: Path, *, heavy_rounds: int = 1, preview: bool = True, llm
         p.write_text(json.dumps(m), encoding="utf-8")
     (tmp_path / "skill").mkdir()
     cfg_over.setdefault("work_reserve_gb", 0.0)
+    cfg_over.setdefault("scribe_auto_max_minutes", 1e9)  # test cũ không quan tâm cổng Scribe; test riêng đặt lại
     cfg_over.setdefault("work_root", tmp_path / "work")
     cfg = Config(footage_root=foot, projects_root=tmp_path / "projects", jobs_db=tmp_path / "jobs.sqlite",
                  checkpoint_db=tmp_path / "ck.sqlite", locks_dir=tmp_path / "locks", agents_dir=agents,

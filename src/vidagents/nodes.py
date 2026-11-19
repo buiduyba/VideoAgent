@@ -235,6 +235,54 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
                 "brief_text": f"{state.get('brief_text', '')}\n\n[Bổ sung lần {n}]\n{p.note.strip()}"}
 
     # ───────────── 3. footage ─────────────
+    # ───────────── 2b. cổng chi phí nhận dạng lời (Scribe tính tiền theo phút) ─────────────
+    SCRIBE_VIDEO = (".mp4", ".mov", ".mkv", ".m4v")   # đuôi mà bước prep của skill đưa đi nhận dạng
+
+    def scribe_need(state: dict) -> tuple[float, list[str], list[str]]:
+        """(số phút phải gọi Scribe, clip cần nhận dạng, clip không đo được độ dài). Clip đã có transcript thì không tính."""
+        foot, tdir = Path(state["footage_dir"]), Path(state["edit_dir"]) / "transcripts"
+        mins, need, unknown = 0.0, [], []
+        for f in sorted(foot.iterdir()):
+            if f.is_file() and f.suffix.lower() in SCRIBE_VIDEO and not (tdir / f"{f.stem}.json").exists():
+                need.append(f.name)
+                dur = duration_of(cfg, f)
+                if dur is None:   # không đo được: ước theo dung lượng ở 16 Mb/s (thấp hơn bitrate điện thoại/4K thường gặp -> ước dư, an toàn)
+                    unknown.append(f.name)
+                    dur = f.stat().st_size / 2_000_000
+                mins += dur / 60
+        return mins, need, unknown
+
+    def scribe_gate(state: dict) -> dict:
+        """Hỏi trước khi tốn tiền Scribe. Node cổng: chỉ đọc (ffprobe) trước interrupt, không ghi gì."""
+        ap = state.get("approvals", {})
+        mode = state.get("mode_override") or state.get("mode") or ""
+        if ap.get("scribe_ok") or (mode and not d.tools.has("footage", "prep", mode)):
+            return {"gate_result": "approve"}
+        mins, need, unknown = scribe_need(state)
+        limit = cfg.scribe_auto_max_minutes
+        if not need or (limit is not None and mins <= limit):
+            auto = {"by": "tự động", "at": d.now().isoformat(timespec="seconds"), "minutes": round(mins, 1),
+                    "note": "không cần gọi Scribe" if not need else f"dưới ngưỡng {limit:g} phút"}
+            return {"gate_result": "approve", "approvals": {**ap, "scribe_ok": auto}}
+        jid = state["job_id"]
+        lines = [f"CẦN DUYỆT CHI PHÍ NHẬN DẠNG LỜI (ElevenLabs Scribe, tính theo phút âm thanh)",
+                 f"{len(need)} clip chưa có bản nhận dạng: khoảng {mins:.1f} phút"
+                 + (f" (trong đó {len(unknown)} clip không đo được độ dài, ước theo dung lượng)" if unknown else "") + ".",
+                 "  " + ", ".join(need[:8]) + (" …" if len(need) > 8 else "")]
+        if not mode:
+            lines.append("Chế độ dựng chưa chọn: nếu job dựng bằng chế độ không cần lời thì bước này không tốn gì.")
+        lines += ["", f"/duyet {jid} để nhận dạng   ·   /huy {jid}"]
+        sync(state, status="waiting_approval", stage="duyet_scribe")
+        p = ask(state, "approval", "\n".join(lines))
+        if p is None or p.action not in ("approve", "cancel"):
+            return {"gate_result": "ignored"}
+        if p.action == "cancel":
+            return {"gate_result": "cancel", "cancel_reason": "Người giao không duyệt chi phí nhận dạng lời", "status": "cancelled"}
+        sync(state, status="running", stage="duyet_scribe_ok")
+        return {"gate_result": "approve", "status": "running",
+                "approvals": {**ap, "scribe_ok": {**stamp(p), "minutes": round(mins, 1), "clips": need}},
+                "steps": [step(state, "scribe_gate", minutes=round(mins, 1))]}
+
     def footage(state: dict) -> dict:
         vt, ed = vt_of(state), Path(state["edit_dir"])
         files = probe_footage(cfg, Path(state["footage_dir"]))
@@ -251,7 +299,7 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
                                         + wrap_data("kiem_ke", json.dumps(files, ensure_ascii=False))
                                         + wrap_data("brief", state.get("brief_text", "")))
             mode, reason = adv.mode, adv.reason
-        res = d.tools.run("footage", "prep", mode, vars_for(state, "footage"), cwd=ed, approvals={},
+        res = d.tools.run("footage", "prep", mode, vars_for(state, "footage"), cwd=ed, approvals=state.get("approvals", {}),
                           owner=state["job_id"], on_wait=on_wait_for(state))
         texts = "\n\n".join(f"## {Path(r).name}\n{_read(Path(r), 12000)}" for r in res.reports)
         rep = d.llm.structured(
@@ -641,7 +689,7 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
         return {"status": "cancelled", "cancelled": True}
 
     raw = {
-        "intake": intake, "extract_brief": extract_brief, "ask_info": ask_info, "footage": footage, "script": script,
+        "intake": intake, "scribe_gate": scribe_gate, "extract_brief": extract_brief, "ask_info": ask_info, "footage": footage, "script": script,
         "approve_1": approve_1, "edit_build": edit_build, "edit_fix": edit_fix, "critic": critic,
         "approve_2": approve_2, "escalate": escalate, "render": render, "deliver": deliver, "lessons": lessons,
         "lesson_gate": lesson_gate, "cancel_end": cancel_end,

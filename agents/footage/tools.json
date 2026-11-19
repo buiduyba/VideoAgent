@@ -3,7 +3,8 @@
   "_ghi_chu": {
     "A": "Chế độ A: ảnh xem trước từng clip (1 hình/2 s) + đọc chữ trên ảnh/logo; chưa có lệnh đóng gói.",
     "C": "Chế độ C: xem references/che-do-c.md của skill. Script có sẵn trong scripts/montage: shot_scan.py, vad_speech.py (Bước 1-2).",
-    "S": "Chế độ S: skill-video-dao-tao-tu-slide (nhận slide), chưa tích hợp."
+    "S": "Chế độ S: skill-video-dao-tao-tu-slide (nhận slide), chưa tích hợp.",
+    "scribe": "prep (B) gọi ElevenLabs Scribe cho clip chưa có transcript (tính tiền theo phút): requires scribe_ok, do node scribe_gate đặt (tự động khi không cần gọi hoặc dưới ngưỡng scribe_auto_max_minutes, còn lại hỏi qua Telegram)."
   },
   "actions": {
     "prep": {
@@ -25,7 +26,8 @@
           "report_files": [
             "{edit_dir}/inventory.md",
             "{edit_dir}/takes_packed.md"
-          ]
+          ],
+          "requires": "scribe_ok"
         }
       ]
     }

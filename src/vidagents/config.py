@@ -53,6 +53,9 @@ class Config:
     watchdog_every_s: int = 300
     # Bản xem trước nhẹ (adapter adapters/preview_b.py). Giá trị --quality của HyperFrames CHƯA kiểm chứng: để trống = không gửi cờ (render đủ chất lượng); xem `hyperframes render --help` rồi điền
     preview_quality: str = ""
+    # Cổng chi phí nhận dạng lời (ElevenLabs Scribe, tính tiền theo phút âm thanh). Số phút cần gọi Scribe <= ngưỡng thì tự
+    # chạy; lớn hơn (hoặc không đo được độ dài) thì hỏi người giao qua Telegram. None = luôn hỏi khi có phút nào phải gọi.
+    scribe_auto_max_minutes: float | None = None
 
     @property
     def adapters_dir(self) -> Path:
@@ -105,4 +108,5 @@ class Config:
             stall_minutes=int(raw.get("stall_minutes", 60)),
             watchdog_every_s=int(raw.get("watchdog_every_s", 300)),
             preview_quality=str(raw.get("preview_quality", "")),
+            scribe_auto_max_minutes=(float(raw["scribe_auto_max_minutes"]) if raw.get("scribe_auto_max_minutes") is not None else None),
         )

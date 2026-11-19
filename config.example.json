@@ -42,5 +42,7 @@
   "watchdog_every_s": 300,
   "preview_quality": "",
   "_ghi_chu_pricing": "pricing: USD cho 1 triệu token. Số mặc định trong code chỉ là THAM KHẢO (nguồn thứ ba, chưa đối chiếu trang giá chính thức của Anthropic): phải kiểm rồi điền lại ở đây. Model thiếu giá thì chỉ đếm token, không đoán tiền. max_cost_per_job_usd: trần chi phí AI mỗi job (null = không giới hạn).",
-  "_ghi_chu_canh": "stall_minutes: quá số phút này không nhúc nhích thì báo Telegram. preview_quality: để trống; điền sau khi xem `npx.cmd hyperframes render --help`."
+  "_ghi_chu_canh": "stall_minutes: quá số phút này không nhúc nhích thì báo Telegram. preview_quality: để trống; điền sau khi xem `npx.cmd hyperframes render --help`.",
+  "scribe_auto_max_minutes": null,
+  "_ghi_chu_scribe": "scribe_auto_max_minutes: số phút âm thanh tối đa được tự gửi ElevenLabs Scribe mỗi job (đã có transcript thì không tính). null = lần nào cần gọi cũng hỏi qua Telegram."
 }

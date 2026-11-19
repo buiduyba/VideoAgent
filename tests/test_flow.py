@@ -79,7 +79,8 @@ def test_revise_with_mode_change_goes_back_to_footage(env):
     run_to_approval_1(e)
     e.mr.trace.clear()
     assert e.mr.resume(e.state, pay("revise", note="đổi sang cảnh nền", mode="C")) == "paused"
-    assert e.mr.trace[:3] == ["approve_1", "footage", "script"]
+    # đổi chế độ thì quay lại xem footage, qua cổng chi phí Scribe (đã duyệt từ trước nên không hỏi lại)
+    assert e.mr.trace[:4] == ["approve_1", "scribe_gate", "footage", "script"]
     assert e.state["mode"] == "C" and e.state["mode_changed"] is False
     assert e.state["feedback"][0]["note"] == "đổi sang cảnh nền"
     assert any("đã sửa theo góp ý" in _read(e, "script.md") for _ in [0])
@@ -248,3 +249,57 @@ def test_tool_failure_is_retried_once_then_raises(tmp_path):
         e.mr.resume(e.state, pay("approve"))
     assert Flaky.calls == 2  # thử lại đúng 1 lần
     assert e.deps.tools.locks.busy() == 0  # lỗi cũng phải nhả khóa
+
+
+# ───── cổng chi phí nhận dạng lời (Scribe) ─────
+import vidagents.nodes as _N  # noqa: E402
+
+
+def _scribe_env(tmp_path, monkeypatch, limit, minutes):
+    from conftest import make_env
+    monkeypatch.setattr(_N, "duration_of", lambda cfg, f: minutes * 60)
+    return make_env(tmp_path, scribe_auto_max_minutes=limit)
+
+
+def _start(e):
+    e.mr.run(e.state)
+    if e.mr.paused == "ask_info":   # brief demo thiếu mục tiêu: trả lời rồi mới tới cổng Scribe
+        e.mr.resume(e.state, pay("answer", note="Mục tiêu: bán hàng"))
+    return e.mr
+
+
+def test_scribe_gate_asks_above_limit_and_records_approval(tmp_path, monkeypatch):
+    e = _scribe_env(tmp_path, monkeypatch, limit=5, minutes=12)
+    mr = _start(e)
+    assert mr.paused == "scribe_gate" and "12.0 phút" in mr.pending["text"] and "clip.mp4" in mr.pending["text"]
+    assert mr.resume(e.state, pay("approve")) == "paused" and mr.paused == "approve_1"
+    ok = e.state["approvals"]["scribe_ok"]
+    assert ok["by"] == "1001" and ok["minutes"] == 12.0 and ok["clips"] == ["clip.mp4"]
+
+
+def test_scribe_gate_auto_below_limit_and_when_transcript_exists(tmp_path, monkeypatch):
+    e = _scribe_env(tmp_path, monkeypatch, limit=15, minutes=3)
+    assert _start(e).paused == "approve_1"
+    assert e.state["approvals"]["scribe_ok"]["by"] == "tự động"
+    # đã có transcript của clip: không cần gọi Scribe, không hỏi kể cả khi ngưỡng = None (luôn hỏi)
+    e2 = _scribe_env(tmp_path / "b", monkeypatch, limit=None, minutes=60)
+    src_t = e2.clip / "edit" / "transcripts"
+    src_t.mkdir(parents=True)
+    (src_t / "clip.json").write_text("{}", encoding="utf-8")
+    assert _start(e2).paused == "approve_1"
+    assert e2.state["approvals"]["scribe_ok"]["note"] == "không cần gọi Scribe"
+
+
+def test_scribe_gate_cancel_stops_before_prep(tmp_path, monkeypatch):
+    e = _scribe_env(tmp_path, monkeypatch, limit=None, minutes=1)
+    mr = _start(e)
+    assert mr.paused == "scribe_gate"
+    assert mr.resume(e.state, pay("cancel")) == "done" or e.state.get("status") == "cancelled"
+    assert e.state["status"] == "cancelled" and "footage" not in mr.trace
+
+
+def test_prep_requires_scribe_ok_in_tools_json():
+    import json
+    from pathlib import Path as P
+    t = json.loads((P(__file__).resolve().parents[1] / "agents" / "footage" / "tools.json").read_text(encoding="utf-8"))
+    assert t["actions"]["prep"]["B"][0]["requires"] == "scribe_ok"
