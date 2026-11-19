@@ -9,6 +9,27 @@ from pathlib import Path
 from .config import Config
 
 
+def load_env_file(path: Path) -> list[str]:
+    """Nạp khóa từ file .env (KHÓA=giá trị, dòng # là ghi chú) vào biến môi trường của tiến trình.
+    Biến đã đặt sẵn trong Windows thì giữ nguyên (biến của Windows thắng file). Trả danh sách TÊN đã nạp, không bao giờ in giá trị."""
+    import os
+    loaded = []
+    try:
+        lines = Path(path).read_text(encoding="utf-8-sig").splitlines()
+    except OSError:
+        return loaded
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k, v = k.strip(), v.strip().strip('"').strip("'")
+        if k and v and not os.environ.get(k):
+            os.environ[k] = v
+            loaded.append(k)
+    return loaded
+
+
 def _cfg(args) -> Config:
     return Config.load(args.config)
 
@@ -243,6 +264,10 @@ def main(argv=None) -> int:
     p.add_argument("--config", default="config.json", help="chỉ dùng với --live: lấy bảng giá, model, tên biến chứa key")
     p.set_defaults(fn=cmd_demo)
     args = ap.parse_args(argv)
+    # file .env cạnh config.json (hoặc ở thư mục đang chạy) để đặt khóa mà không cần sửa biến môi trường của Windows
+    cfg_dir = Path(getattr(args, "config", "config.json")).resolve().parent
+    for env in dict.fromkeys([cfg_dir / ".env", Path.cwd() / ".env"]):
+        load_env_file(env)
     return args.fn(args)
 
 
