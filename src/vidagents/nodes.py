@@ -183,6 +183,8 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
         if staged.skipped_dirs:
             note(state, f"Lưu ý: bỏ qua {len(staged.skipped_dirs)} thư mục con ({', '.join(staged.skipped_dirs[:5])}). "
                         "Chỉ chép file ở cấp trên cùng của thư mục footage.")
+        if staged.transcripts_reused:
+            note(state, f"Dùng lại {staged.transcripts_reused} bản nhận dạng lời đã có của footage này (không gọi Scribe lại).")
         rp_src, rp = rp, staged.work_dir
         ed = rp / "edit"
         ed.mkdir(exist_ok=True)
