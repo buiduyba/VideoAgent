@@ -45,7 +45,8 @@ class Config:
     max_critic_rounds: int = 2  # nguyên tắc 5
     max_revisions: int = 5  # số lần người duyệt được yêu cầu sửa trước khi hỏi lại
     max_info_rounds: int = 3
-    light_workers: int = 4  # số job chạy bước nhẹ cùng lúc
+    light_workers: int = 4  # số job chạy bước NHẸ cùng lúc (job đang chờ/chạy bước nặng không chiếm chỗ này)
+    job_threads: int = 64  # tổng số luồng của bộ chạy job: gồm cả luồng đang chờ suất render nên phải lớn hơn light_workers nhiều
     default_model: str = "claude-sonnet-5-5"
     models: dict = field(default_factory=dict)  # {"script": "...", "critic": "..."}
     # Mức "suy nghĩ" của model theo từng agent: low | medium | high | xhigh | max. Chữ AI viết ra (kể cả suy nghĩ) chiếm ~72% chi phí,
@@ -120,6 +121,7 @@ class Config:
             max_revisions=int(raw.get("max_revisions", 5)),
             max_info_rounds=int(raw.get("max_info_rounds", 3)),
             light_workers=int(raw.get("light_workers", 4)),
+            job_threads=int(raw.get("job_threads", 64)),
             default_model=raw.get("models", {}).get("default", "claude-sonnet-5-5"),
             models={k: v for k, v in raw.get("models", {}).items() if k != "default" and v},
             efforts=_efforts(raw.get("efforts", {})),

@@ -65,6 +65,12 @@ class ToolRunner:
         self.cfg = cfg
         self.locks = locks
         self._cache: dict[str, dict] = {}
+        # (owner) -> context manager. Bộ chạy job gắn vào để nhả "chỗ luồng nhẹ" trong lúc job chờ/chạy bước nặng (xem runner.py);
+        # không gắn (CLI, test) thì bước nặng chạy y như cũ.
+        self.heavy_hook: Callable[[str], object] | None = None
+        # (owner) -> None. Gọi định kỳ khi job đang CHỜ suất render, để bộ canh không báo "job đứng" cho job chỉ đang xếp hàng.
+        # Chỉ lúc chờ: job đang CHẠY bước nặng không có nhịp, nên job treo thật vẫn bị báo.
+        self.wait_tick: Callable[[str], None] | None = None
 
     # ── manifest ──
     def manifest(self, agent: str) -> dict:
@@ -108,11 +114,15 @@ class ToolRunner:
         for n in range(attempts):
             try:
                 with ExitStack() as stack:
-                    # thứ tự cố định: khóa thương hiệu (ngoài) -> suất render (trong), tránh khóa chéo giữa các job
+                    # thứ tự cố định: nhả chỗ luồng nhẹ (ngoài cùng) -> khóa thương hiệu -> suất render (trong), tránh khóa chéo giữa các job.
+                    # Thoát khối thì ngược lại: trả suất render xong mới xin lại chỗ luồng nhẹ, nên không bao giờ giữ suất render để chờ chỗ.
+                    if self.heavy_hook and (st.get("heavy") or st.get("brand_lock")):
+                        stack.enter_context(self.heavy_hook(owner))
                     if st.get("brand_lock"):
                         stack.enter_context(brand_lock(self.cfg, str(variables.get("brand", "")), owner))
                     if st.get("heavy"):
-                        stack.enter_context(self.locks.hold(owner, timeout=self.cfg.lock_timeout_s, on_wait=on_wait))
+                        stack.enter_context(self.locks.hold(owner, timeout=self.cfg.lock_timeout_s, on_wait=on_wait,
+                                                            on_tick=(lambda: self.wait_tick(owner)) if self.wait_tick else None))
                     code, out = self._exec(st, cmd, cwd, variables)
             except LockTimeout as e:
                 raise ToolError(str(e)) from e

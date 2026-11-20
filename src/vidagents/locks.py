@@ -18,8 +18,9 @@ class LockTimeout(Exception):
 
 
 class SlotLock:
-    def __init__(self, directory: Path, slots: int = 1, stale_s: int = 4 * 3600, poll_s: float = 2.0, name: str = "render-slot"):
+    def __init__(self, directory: Path, slots: int = 1, stale_s: int = 4 * 3600, poll_s: float = 2.0, name: str = "render-slot", tick_s: float = 60.0):
         self.name = name
+        self.tick_s = tick_s  # trong lúc CHỜ suất, cứ chừng này giây gọi on_tick một lần (nhịp "còn sống" cho sổ job)
         self.dir = Path(directory)
         self.dir.mkdir(parents=True, exist_ok=True)
         self.slots = max(1, slots)
@@ -61,9 +62,11 @@ class SlotLock:
     def busy(self) -> int:
         return sum(1 for i in range(self.slots) if self._path(i).exists())
 
-    def acquire(self, owner: str, timeout: float | None = None, on_wait: Callable[[int], None] | None = None) -> int:
+    def acquire(self, owner: str, timeout: float | None = None, on_wait: Callable[[int], None] | None = None,
+                on_tick: Callable[[], None] | None = None) -> int:
         start = time.time()
         told = False
+        last_tick = start
         while True:
             for i in range(self.slots):
                 if self._try(i, owner):
@@ -73,6 +76,12 @@ class SlotLock:
                 told = True
             if timeout is not None and time.time() - start >= timeout:
                 raise LockTimeout(f"Chờ suất render quá {int(timeout)} giây")
+            if on_tick and time.time() - last_tick >= self.tick_s:
+                last_tick = time.time()
+                try:
+                    on_tick()
+                except Exception:  # noqa: BLE001 - nhịp lỗi (vd. sổ job đang bận) không được làm hỏng việc chờ
+                    log.debug("on_tick lỗi khi chờ suất", exc_info=True)
             time.sleep(self.poll_s)
 
     def release(self, slot: int, owner: str) -> bool:
@@ -98,8 +107,9 @@ class SlotLock:
         return False
 
     @contextmanager
-    def hold(self, owner: str, timeout: float | None = None, on_wait: Callable[[int], None] | None = None) -> Iterator[int]:
-        slot = self.acquire(owner, timeout, on_wait)
+    def hold(self, owner: str, timeout: float | None = None, on_wait: Callable[[int], None] | None = None,
+             on_tick: Callable[[], None] | None = None) -> Iterator[int]:
+        slot = self.acquire(owner, timeout, on_wait, on_tick)
         try:
             yield slot
         finally:
