@@ -96,14 +96,16 @@ def cmd_bot(args) -> int:
     from .app import build_deps
     from .bot import TelegramNotifier, run_bot
     from .graph import build_graph, open_checkpointer, production_interrupt
+    from .outbox import Outbox, ReliableNotifier
     from .runner import JobRunner
 
     cfg = _cfg(args)
-    notifier = TelegramNotifier(cfg)
+    # mọi tin gửi đi qua hộp thư đi: Telegram chập chờn thì giữ lại gửi sau, không làm hỏng job và không làm mất tin "job dừng"
+    notifier = ReliableNotifier(TelegramNotifier(cfg), Outbox(cfg.jobs_db))
     deps = build_deps(cfg, notifier=notifier, interrupt=production_interrupt())
     graph = build_graph(deps, open_checkpointer(cfg.checkpoint_db))
-    admin = cfg.admin_ids[0] if cfg.admin_ids else None
-    runner = JobRunner(graph, deps, admin_notify=(lambda t: notifier.send(admin, t)) if admin else None)
+    runner = JobRunner(graph, deps)   # job dừng thì runner tự báo người giao và MỌI admin trong cfg.admin_ids
+    notifier.start()
     from .workspace import start_cleanup_thread
 
     from .watchdog import start_watchdog_thread

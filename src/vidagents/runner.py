@@ -10,6 +10,7 @@ có khi cả giờ (đo ở bài thử tải 10 người x 3 job).
 from __future__ import annotations
 
 import contextlib
+import logging
 import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
@@ -18,6 +19,8 @@ from pathlib import Path
 from .graph import pending_interrupts
 from .nodes import SLUG, Deps
 from .usage import CostCapExceeded
+
+log = logging.getLogger(__name__)
 
 
 class JobRunner:
@@ -126,20 +129,58 @@ class JobRunner:
         except Exception:  # noqa: BLE001
             return []
 
+    def _safe_send(self, user_id: str, text: str, buttons=None) -> None:
+        """Gửi một tin; lỗi thì ghi nhật ký và đi tiếp. Tin "job dừng" của người này lỗi không được làm mất tin của người kia."""
+        try:
+            self.d.notifier.send(user_id, text, buttons=buttons) if buttons else self.d.notifier.send(user_id, text)
+        except Exception as e:  # noqa: BLE001
+            log.warning("gửi tin cho %s lỗi: %s: %s", user_id, type(e).__name__, str(e)[:120])
+
+    def _notify_stop(self, job_id: str, to_requester: str, to_admins: str) -> None:
+        """Báo job dừng NGAY cho người giao (kèm nút xử lý) và cho MỌI admin (kèm chi tiết kỹ thuật, không nút: admin không duyệt hộ).
+        Mỗi người gửi riêng trong try/except. Người giao cũng là admin thì chỉ nhận một tin (bản có nút)."""
+        job = self.d.jobs.get(job_id) or {}
+        req = str(job.get("requester_id") or "")
+        if req:
+            self._safe_send(req, to_requester, buttons=self._buttons(job_id))
+        if self.admin_notify:   # cách cũ (tham số admin_notify): giữ cho tương thích
+            try:
+                self.admin_notify(to_admins)
+            except Exception as e:  # noqa: BLE001
+                log.warning("admin_notify lỗi: %s: %s", type(e).__name__, str(e)[:120])
+            return
+        for a in dict.fromkeys(str(x) for x in self.d.cfg.admin_ids if x):
+            if a != req:
+                self._safe_send(a, to_admins)
+
+    def _who(self, job_id: str) -> str:
+        j = self.d.jobs.get(job_id) or {}
+        return f"Người giao: {j.get('requester_name') or j.get('requester_id') or '?'} · {j.get('brand', '')} · {j.get('video_type', '')}"
+
     def _blocked(self, job_id: str, err: Exception) -> None:
         self.d.jobs.update(job_id, status="blocked", note=f"{type(err).__name__}: {err}"[:300])
-        job = self.d.jobs.get(job_id) or {}
+        who = self._who(job_id)
         if isinstance(err, CostCapExceeded):
             msg = (f"[{job_id}] Job DỪNG vì chi phí AI đã chạm trần: đã dùng ~${err.spent:.2f} / trần ${err.cap:.2f}.\n"
                    f"Đã lưu tiến độ. Muốn làm tiếp: /nangtran {job_id} <số USD mới, lớn hơn ${err.cap:.2f}>  ·  hoặc /huy {job_id}")
-            if job.get("requester_id"):
-                self.d.notifier.send(job["requester_id"], msg, buttons=self._buttons(job_id))
-            if self.admin_notify:
-                self.admin_notify(msg)
+            self._notify_stop(job_id, msg, msg + "\n" + who)
             return
         msg = (f"[{job_id}] Job bị DỪNG do lỗi: {type(err).__name__}: {str(err)[:400]}\n"
                f"Đã lưu tiến độ. Sau khi xử lý nguyên nhân, gõ /tieptuc {job_id} để chạy tiếp từ bước lỗi.")
-        if job.get("requester_id"):
-            self.d.notifier.send(job["requester_id"], msg, buttons=self._buttons(job_id))
-        if self.admin_notify:
-            self.admin_notify(msg + "\n" + traceback.format_exc()[-800:])
+        self._notify_stop(job_id, msg, msg + "\n" + who + "\n" + traceback.format_exc()[-800:])
+
+    def recover_interrupted(self) -> list[str]:
+        """Gọi MỘT lần khi bot vừa khởi động: job còn ở trạng thái đang chạy/xếp hàng thì tiến trình chạy nó đã chết (bot tắt, máy khởi động lại),
+        không có gì đang làm nó. Đánh dấu dừng và báo ngay để người giao bấm "Chạy tiếp" (tiến độ đã lưu ở checkpoint). Việc đang chờ người
+        duyệt/trả lời, việc đã xong hoặc hủy thì giữ nguyên. Trả về mã các job vừa đánh dấu."""
+        out = []
+        for j in self.d.jobs.list(None, active_only=True):
+            if j["status"] not in ("queued", "running"):
+                continue
+            jid = j["job_id"]
+            where = j.get("stage") or "?"
+            self.d.jobs.update(jid, status="blocked", note=f"Bot khởi động lại khi job đang chạy (bước: {where}); tiến độ đã lưu.")
+            self._notify_stop(jid, f"[{jid}] Job DỪNG vì bot (hoặc máy) vừa khởi động lại khi đang chạy (bước: {where}). Tiến độ đã lưu: bấm \"Chạy tiếp\" "
+                                   f"hoặc gõ /tieptuc {jid}.", f"[{jid}] Bot vừa khởi động lại: job này đang chạy dở (bước: {where}) nên đã bị dừng. {self._who(jid)}")
+            out.append(jid)
+        return out

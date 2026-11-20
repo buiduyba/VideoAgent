@@ -30,6 +30,7 @@ HELP = (
     "/trangthai [job]   xem tiến độ và chi phí AI\n"
     "/nangtran <job> <USD>   nâng trần chi phí AI của job rồi chạy tiếp (khi job dừng vì chạm trần)\n"
     "/tieptuc <job>   chạy tiếp job bị dừng / gửi lại yêu cầu duyệt\n"
+    "/homnay   hôm nay dựng video nào (bot cũng tự hỏi lúc 8:30 và 21:00 nếu đã bật)\n"
     "/loai   danh sách loại video\n"
     "/ping   kiểm tra bot còn chạy + việc đang có\n"
     "Quản trị viên: /themnguoi <ID> [tên]  ·  /xoanguoi <ID>  ·  /danhsach  ·  /themloai (thêm dạng video mới bằng nút bấm)"
@@ -304,6 +305,7 @@ def run_bot(cfg: Config, runner, deps, notifier: TelegramNotifier) -> None:
             return None, "Chỉ người giao việc mới thao tác được job này."
         return job, ""
 
+    from . import daily as dailymod
     from . import typewiz, ui, wizard
     from .chat import ChatAssistant
 
@@ -316,6 +318,16 @@ def run_bot(cfg: Config, runner, deps, notifier: TelegramNotifier) -> None:
 
     assistant = ChatAssistant(cfg, deps)
     markup = notifier.markup
+    daily = dailymod.Daily(cfg, deps.jobs, dailymod.DailyStore(cfg.jobs_db), deps.types, getattr(deps, "meter", None))
+
+    def capture_profile(wz_state, start: dict) -> None:
+        """Giao việc bằng phiếu thì nhớ phiếu làm HỒ SƠ BRIEF của KOC đó: các lần sau hỏi hàng ngày chỉ cần chọn giá và ưu đãi."""
+        try:
+            if wz_state and wz_state.get("values"):
+                project = wizard._project_of(start["footage_dir"], Path(cfg.footage_root))
+                daily.store.save_profile(project, start["video_type"], start["brand"], dict(wz_state["values"]), start["footage_dir"])
+        except Exception:  # noqa: BLE001 - lưu hồ sơ lỗi không được làm mất tin "Đã nhận"
+            log.exception("lưu hồ sơ brief lỗi")
 
     async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """/start và /menu: menu nút bấm. Người chưa được cấp quyền thì nhận lại ID của họ (để gửi cho quản trị)."""
@@ -344,8 +356,34 @@ def run_bot(cfg: Config, runner, deps, notifier: TelegramNotifier) -> None:
             return
         await start_typewiz(update, ctx)
 
+    async def send_daily(update: Update, uid: str) -> None:
+        """/homnay và nút menu: hỏi ngay bây giờ (cùng luồng với lượt hỏi tự động 8:30 và 21:00)."""
+        st = await asyncio.to_thread(daily.manual_session, uid)
+        r = daily.pick_view(st)
+        daily.store.save_session(uid, st)
+        await update.effective_message.reply_text(r.text, reply_markup=markup(r.kb))
+
+    async def open_wizard_at(update: Update, ctx: ContextTypes.DEFAULT_TYPE, uid: str, folder: str) -> None:
+        """Mở phiếu giao việc (luồng /video) tại một thư mục; folder rỗng thì từ màn chọn thư mục."""
+        ctx.user_data.pop("tw", None)
+        daily.cancel_text(uid)
+        recent = list(dict.fromkeys(j["footage_dir"] for j in deps.jobs.list(uid, active_only=False) if j.get("footage_dir")))[:3]
+        past = [{"footage_dir": j.get("footage_dir", ""), "video_type": j.get("video_type", ""), "brand": j.get("brand", "")}
+                for j in deps.jobs.list(uid, active_only=False) if j.get("status") != "cancelled"][:20]
+        st = wizard.new_state(cfg, recent, past)
+        ctx.user_data["wz"] = st
+        r = await asyncio.to_thread(wizard._pick_folder, st, cfg, folder, deps.types) if folder else await asyncio.to_thread(wizard.folder_view, st, cfg)
+        await update.effective_message.reply_text(r.text, reply_markup=markup(r.kb))
+
+    async def homnay(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        uid = await guard(update)
+        if not uid:
+            return
+        await send_daily(update, uid)
+
     async def start_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, uid: str):
         ctx.user_data.pop("tw", None)
+        daily.cancel_text(uid)
         recent = list(dict.fromkeys(j["footage_dir"] for j in deps.jobs.list(uid, active_only=False) if j.get("footage_dir")))[:3]
         past = [{"footage_dir": j.get("footage_dir", ""), "video_type": j.get("video_type", ""), "brand": j.get("brand", "")}
                 for j in deps.jobs.list(uid, active_only=False) if j.get("status") != "cancelled"][:20]
@@ -600,8 +638,9 @@ def run_bot(cfg: Config, runner, deps, notifier: TelegramNotifier) -> None:
     async def finish_wizard(q, ctx, r, uid: str) -> None:
         """Kết quả một bước wizard: có `start` thì tạo job, hết thì xóa trạng thái; còn lại sửa tin hiện tại sang bước mới."""
         if r.start:
-            ctx.user_data.pop("wz", None)
+            wz_state = ctx.user_data.pop("wz", None)
             jid = runner.start(requester_id=uid, requester_name=q.from_user.full_name or uid, **r.start)
+            capture_profile(wz_state, r.start)
             await reply_with(q, f"✅ Đã nhận, mã job: {jid}\nBot sẽ nhắn khi cần bạn duyệt hoặc trả lời. Bấm nút bên dưới để xem tiến độ bất cứ lúc nào." + dup_note(jid),
                              ui.jobs_keyboard([deps.jobs.get(jid)]), edit=True)
             return
@@ -633,6 +672,34 @@ def run_bot(cfg: Config, runner, deps, notifier: TelegramNotifier) -> None:
             r = await asyncio.to_thread(wizard.on_callback, st, cfg, deps.types, code, "" if ref == "-" else ref)
             await finish_wizard(q, ctx, r, uid)
             return
+        if kind == "d":   # hỏi hàng ngày "hôm nay dựng video nào": trạng thái nằm trong SQLite (bền qua khởi động lại)
+            dst = daily.store.load_session(uid)
+            if not dst:
+                await reply_with(q, dailymod.EXPIRED)
+                return
+            r = await asyncio.to_thread(daily.on_callback, dst, code, ref)
+            if r.save:
+                daily.store.save_session(uid, dst)
+            if r.wizard is not None:
+                await reply_with(q, r.text)
+                await open_wizard_at(update, ctx, uid, r.wizard)
+                return
+            if r.starts or r.failed or r.firsts:
+                started, notes = [], {}
+                for s in r.starts:   # giao tuần tự trong vòng lặp sự kiện: mã job được cấp nguyên tử, không trùng
+                    jid = runner.start(requester_id=uid, requester_name=q.from_user.full_name or uid, **s["args"])
+                    daily.store.save_profile(s["project"], s["vtype"], s["brand"], s["values"], s["folder"])
+                    started.append((s, jid))
+                    same = deps.jobs.same_footage(jid)
+                    if same:
+                        notes[jid] = f" ⚠ cùng thư mục với {same[0]['job_id']}"
+                await reply_with(q, daily.done_text(started, r.failed, r.firsts, notes), ui.jobs_keyboard([deps.jobs.get(j) for _s, j in started]), edit=True)
+                for it in r.firsts:
+                    p = daily.first_time_prompt(dst, it)
+                    await q.message.reply_text(p.text, reply_markup=markup(p.kb))
+                return
+            await reply_with(q, r.text, r.kb, edit=r.text != dailymod.EXPIRED)
+            return
         if kind == "t":   # thêm dạng video bằng nút: chỉ quản trị viên (đọc danh sách admin mỗi lần bấm)
             if uid not in admins:
                 await reply_with(q, "Chỉ quản trị viên được thêm dạng video.")
@@ -647,7 +714,9 @@ def run_bot(cfg: Config, runner, deps, notifier: TelegramNotifier) -> None:
             await reply_with(q, r.text, r.kb, edit=r.text != typewiz.EXPIRED_BTN)   # nút cũ: báo hết hạn bằng tin mới, không sửa đè tin đang hiện bước khác
             return
         if kind == "m":   # menu
-            if code == "addtype" and uid in admins:
+            if code == "today":
+                await send_daily(update, uid)
+            elif code == "addtype" and uid in admins:
                 await start_typewiz(update, ctx)
             elif code == "new":
                 await start_wizard(update, ctx, uid)
@@ -737,6 +806,13 @@ def run_bot(cfg: Config, runner, deps, notifier: TelegramNotifier) -> None:
                         ctx.user_data.pop("tw", None)
                     await update.message.reply_text(r.text, reply_markup=markup(r.kb))
                     return
+        dst = daily.store.load_session(uid)   # đang ở bước "gõ giá/ưu đãi mới" của lượt hỏi hàng ngày?
+        if dst and dst.get("stage") == "text" and daily.text_fresh(dst):
+            dr = daily.on_text(dst, text)
+            if dr is not None:
+                daily.store.save_session(uid, dst)
+                await update.message.reply_text(dr.text, reply_markup=markup(dr.kb))
+                return
         st = ctx.user_data.get("wz")
         if st:
             r = await asyncio.to_thread(wizard.on_text, st, cfg, deps.types, text)
@@ -744,6 +820,7 @@ def run_bot(cfg: Config, runner, deps, notifier: TelegramNotifier) -> None:
                 if r.start:
                     ctx.user_data.pop("wz", None)
                     jid = runner.start(requester_id=uid, requester_name=update.effective_user.full_name or uid, **r.start)
+                    capture_profile(st, r.start)
                     await update.message.reply_text(f"✅ Đã nhận, mã job: {jid}" + dup_note(jid), reply_markup=markup(ui.jobs_keyboard([deps.jobs.get(jid)])))
                     return
                 if r.panel and ctx.user_data.get("wz_msg"):   # bảng phiếu: sửa tại chỗ tin bảng thay vì gửi tin mới (đỡ đầy khung chat)
@@ -765,12 +842,20 @@ def run_bot(cfg: Config, runner, deps, notifier: TelegramNotifier) -> None:
 
     async def on_init(app):
         notifier.attach(app, asyncio.get_running_loop())
+        try:   # job đang chạy dở lúc bot tắt/khởi động lại: đánh dấu dừng và báo ngay (chỉ chạy được SAU khi attach, vì phải gửi tin)
+            stopped = await asyncio.to_thread(runner.recover_interrupted)
+            if stopped:
+                log.warning("đã đánh dấu dừng %d job đang chạy dở lúc khởi động lại: %s", len(stopped), ", ".join(stopped))
+        except Exception:  # noqa: BLE001 - phục hồi lỗi không được chặn bot khởi động
+            log.exception("recover_interrupted lỗi")
+        if cfg.daily_enabled:   # lượt hỏi tự động (mặc định 8:30 và 21:00), chỉ chạy được SAU khi attach vì phải gửi tin
+            dailymod.start_daily_thread(daily, lambda uid, text, kb: notifier.send(uid, text, buttons=kb), log=lambda m: log.info(m))
         try:   # danh sách lệnh hiện khi người dùng gõ "/" (đỡ phải nhớ tên lệnh)
             from telegram import BotCommand
 
             await app.bot.set_my_commands([BotCommand("menu", "Mở menu nút bấm"), BotCommand("video", "Giao việc dựng video mới"),
                                            BotCommand("trangthai", "Xem tiến độ các job"), BotCommand("ping", "Kiểm tra bot còn chạy"),
-                                           BotCommand("loai", "Các loại video"), BotCommand("help", "Danh sách lệnh")])
+                                           BotCommand("homnay", "Hôm nay dựng video nào"), BotCommand("loai", "Các loại video"), BotCommand("help", "Danh sách lệnh")])
         except Exception:  # noqa: BLE001 - không đặt được danh sách lệnh thì bot vẫn chạy bình thường
             pass
 
@@ -825,6 +910,7 @@ def run_bot(cfg: Config, runner, deps, notifier: TelegramNotifier) -> None:
     app.add_handler(CommandHandler("nangtran", nangtran))
     app.add_handler(CommandHandler("loai", loai))
     app.add_handler(CommandHandler("themloai", themloai))
+    app.add_handler(CommandHandler("homnay", homnay))
     app.add_handler(CommandHandler("ping", ping))
     # cuối cùng (các lệnh trên khớp trước nên không bị chặn): chữ thường -> bước đang chờ hoặc hỏi đáp; lệnh không có -> gợi ý
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))

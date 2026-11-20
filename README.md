@@ -64,7 +64,7 @@ Khóa (key, token) chỉ đặt qua biến môi trường, không ghi vào file 
 
 ## Lệnh Telegram
 `/video "<thư mục footage>" <loại> <thương hiệu>` + brief ở các dòng sau · `/duyet <job>` · `/sua <job> <góp ý> [chedo=A|B|C|S]` ·
-`/bosung <job> <nội dung>` · `/chapnhan <job>` · `/baihoc <job> 1,3 | ghim 1 | bo` · `/huy <job>` · `/trangthai` (kèm chi phí AI) · `/nangtran <job> <USD>` · `/tieptuc <job>` · `/loai`. Quản trị viên: `/themnguoi` · `/xoanguoi` · `/danhsach` · `/themloai` (thêm dạng video mới bằng nút bấm).
+`/bosung <job> <nội dung>` · `/chapnhan <job>` · `/baihoc <job> 1,3 | ghim 1 | bo` · `/huy <job>` · `/trangthai` (kèm chi phí AI) · `/nangtran <job> <USD>` · `/tieptuc <job>` · `/loai` · `/homnay` (hôm nay dựng video nào). Quản trị viên: `/themnguoi` · `/xoanguoi` · `/danhsach` · `/themloai` (thêm dạng video mới bằng nút bấm).
 Mỗi người nhắn riêng cho bot một lần (`/start`) để bot gửi được tin riêng.
 
 ## Thả skill vào
