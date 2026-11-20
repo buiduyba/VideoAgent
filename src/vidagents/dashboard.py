@@ -12,6 +12,7 @@ import threading
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import unquote
 
 from .config import Config
 from .jobs import JobStore
@@ -26,9 +27,10 @@ AGENTS = (  # (id, tên hiển thị)
 STEP_AGENT = {
     "intake": "orchestrator", "extract_brief": "orchestrator", "footage": "footage", "script": "script",
     "edit_build": "edit", "edit_fix": "edit", "render": "edit", "critic_preview": "critic", "critic_final": "critic",
-    "deliver": "orchestrator", "lessons": "orchestrator",
+    "deliver": "orchestrator", "lessons": "orchestrator", "hand_edit": "edit", "hand_edit_done": "edit",
 }
 STEP_LABEL = {
+    "hand_edit": "Đóng gói chỉnh tay (VideoFac)", "hand_edit_done": "Nhận bản chỉnh tay",
     "intake": "Nhận job", "extract_brief": "Đọc brief", "footage": "Xem footage", "script": "Viết kịch bản",
     "edit_build": "Dựng bản đầu", "edit_fix": "Sửa lỗi", "critic_preview": "Critic: bản xem trước", "render": "Render",
     "critic_final": "Critic: bản cuối", "deliver": "Giao kết quả", "lessons": "Rút bài học",
@@ -58,7 +60,8 @@ def _next_agent(last: str | None, st: dict) -> str | None:
     if last == "lessons":
         return None
     return {"intake": "orchestrator", "footage": "script", "edit_build": "critic", "edit_fix": "critic", "render": "critic",
-            "critic_final": "orchestrator", "deliver": "orchestrator"}.get(last)
+            "critic_final": "orchestrator", "deliver": "orchestrator", "hand_edit": "human",
+            "hand_edit_done": "critic"}.get(last)
 
 
 def _waiting_for(status: str, st: dict, first_open: str | None) -> str:
@@ -225,7 +228,7 @@ def make_server(reader: Reader, host: str = "127.0.0.1", port: int = 8765) -> Th
                 if path == "/api/overview":
                     return self._json(200, reader.overview())
                 if path.startswith("/api/jobs/"):
-                    job_id = path[len("/api/jobs/"):]
+                    job_id = unquote(path[len("/api/jobs/"):])  # trình duyệt mã hóa %xx (mã job cũ có thể có dấu)
                     if not _JOB_ID.match(job_id):
                         return self._json(400, {"error": "Mã job không hợp lệ"})
                     v = reader.job(job_id)
@@ -235,6 +238,13 @@ def make_server(reader: Reader, host: str = "127.0.0.1", port: int = 8765) -> Th
                 return self._json(500, {"error": f"{type(e).__name__}: {str(e)[:200]}"})
 
         def do_POST(self):  # noqa: N802 - cố ý không có: dashboard chỉ đọc
+            try:   # đọc hết thân yêu cầu trước khi trả lời: không đọc thì Windows ngắt kết nối và máy khách đôi khi chỉ thấy lỗi ngắt, không thấy 405
+                n = int(self.headers.get("Content-Length") or 0)
+                if 0 < n <= 65536:
+                    self.rfile.read(n)
+            except (ValueError, OSError):
+                pass
+            self.close_connection = True
             self._json(405, {"error": "Dashboard chỉ xem. Duyệt/hủy qua Telegram."})
 
         do_PUT = do_DELETE = do_PATCH = do_POST

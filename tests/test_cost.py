@@ -28,6 +28,35 @@ def test_cost_recorded_per_job_and_reported_on_delivery(env):
     assert "Chi phí AI: ~$" in done and "lượt gọi" in done
 
 
+def duyet2_text(e):
+    assert e.mr.paused == "approve_2"
+    return e.mr.pending["text"]       # tin yêu cầu duyệt đang chờ (MiniRunner giữ lại thay vì gửi Telegram)
+
+
+def test_duyet2_shows_cost_and_the_three_options(tmp_path):
+    e = make_env(tmp_path, max_cost_per_job_usd=0.5)
+    run_to_approval_1(e)
+    assert e.mr.resume(e.state, pay("approve")) == "paused" and e.mr.paused == "approve_2"
+    t = duyet2_text(e)
+    spent = e.deps.meter.job_total(JOB)["usd"]
+    assert "CHI PHÍ AI (đã dùng ~$" in t and "/ trần $0.50" in t and f"{spent:.2f}" in t
+    assert "/duyet" in t and "không tốn AI" in t                 # duyệt = render trên máy, chỉ soi lỗi bản cuối tốn AI
+    assert "/sua <góp ý>" in t and "mỗi vòng ~$" in t and "vòng." in t   # sửa bằng AI: giá một vòng + số vòng còn trong trần
+    assert "VideoFac" in t and "không tốn AI" in t                # chỉnh tay là lựa chọn thứ ba
+    assert "⚠" not in t.split("CHI PHÍ AI")[1]                    # chưa sửa lần nào, còn xa trần: không cảnh báo thêm
+
+
+def test_duyet2_warns_after_repeated_ai_revisions_and_near_the_cap(tmp_path):
+    e = make_env(tmp_path, max_cost_per_job_usd=0.06)
+    run_to_approval_1(e)
+    assert e.mr.resume(e.state, pay("approve")) == "paused"
+    for _ in range(2):
+        assert e.mr.resume(e.state, pay("revise", note="đổi chữ")) == "paused" and e.mr.paused == "approve_2"
+    t = duyet2_text(e)
+    assert "Đã sửa 2 lần bằng AI" in t and "chỉnh tay" in t
+    assert "có thể chạm trần" in t and "/nangtran" in t
+
+
 def test_two_jobs_are_metered_separately(tmp_path):
     m = UsageMeter(tmp_path / "j.sqlite")
     with job_context("a"):

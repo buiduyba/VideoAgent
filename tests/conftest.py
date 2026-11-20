@@ -36,6 +36,9 @@ def make_env(tmp_path: Path, *, heavy_rounds: int = 1, preview: bool = True, llm
         m["actions"]["critic_preview"]["B"] = [{"name": "critic", "cmd": ["x"], "report_files": ["{critic_out}/report.md"]}]
         p.write_text(json.dumps(m), encoding="utf-8")
     (tmp_path / "skill").mkdir()
+    kit = tmp_path / "projects" / "_brands" / "demo"  # bộ nhận diện thương hiệu tối thiểu (intake kiểm có brand.json)
+    kit.mkdir(parents=True)
+    (kit / "brand.json").write_text('{"name": "Demo"}', encoding="utf-8")
     cfg_over.setdefault("work_reserve_gb", 0.0)
     cfg_over.setdefault("scribe_auto_max_minutes", 1e9)  # test cũ không quan tâm cổng Scribe; test riêng đặt lại
     cfg_over.setdefault("work_root", tmp_path / "work")

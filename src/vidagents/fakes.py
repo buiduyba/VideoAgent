@@ -28,7 +28,8 @@ class DemoLLM:
         self.meter = meter  # nếu gắn: mỗi lần "gọi AI" ghi token giả như ClaudeLLM thật (để test đếm tiền, trần chi phí)
         self.tokens, self.model = tokens, model
 
-    def structured(self, *, agent: str, system: str, user: str, schema, images: Sequence[Path] = ()):
+    def structured(self, *, agent: str, system: str, user: str, schema, images: Sequence[Path] = (), shared: str = ""):
+        user = shared + user  # AI giả không dùng bộ nhớ đệm; chỉ ghép lại thành một lời nhắc như trước
         if self.meter:
             self.meter.check()
         out = self._answer(agent=agent, system=system, user=user, schema=schema, images=images)

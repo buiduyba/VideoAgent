@@ -282,7 +282,8 @@ def test_spec_is_closed_and_fully_reachable():
     from vidagents.nodes import make_nodes  # noqa: F401
 
     nodes = {"intake", "extract_brief", "ask_info", "scribe_gate", "footage", "script", "approve_1", "edit_build", "edit_fix", "critic",
-             "approve_2", "escalate", "render", "deliver", "lessons", "lesson_gate", "cancel_end"}
+             "approve_2", "hand_edit", "hand_edit_wait", "hand_edit_done", "hand_edit_review", "escalate", "render", "deliver", "lessons", "lesson_gate",
+             "cancel_end"}
     assert set(plain) | set(cond) == nodes  # mọi node có cạnh đi ra
     seen, todo = set(), [ENTRY]
     while todo:

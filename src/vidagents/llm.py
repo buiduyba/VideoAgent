@@ -25,7 +25,7 @@ def has_ant_profile() -> bool:
 
 
 class LLM(Protocol):
-    def structured(self, *, agent: str, system: str, user: str, schema: type[T], images: Sequence[Path] = ()) -> T: ...
+    def structured(self, *, agent: str, system: str, user: str, schema: type[T], images: Sequence[Path] = (), shared: str = "") -> T: ...
 
 
 class ClaudeLLM:
@@ -57,19 +57,33 @@ class ClaudeLLM:
         return {"type": "image", "source": {"type": "base64", "media_type": media,
                                             "data": base64.b64encode(path.read_bytes()).decode()}}
 
-    def structured(self, *, agent: str, system: str, user: str, schema: type[T], images: Sequence[Path] = ()) -> T:
+    def structured(self, *, agent: str, system: str, user: str, schema: type[T], images: Sequence[Path] = (), shared: str = "") -> T:
+        """`shared` = phần đầu lời nhắc GIỐNG NHAU giữa các lần gọi liên tiếp (brief, báo cáo, thương hiệu...): được đánh dấu bộ nhớ
+        đệm, lần gọi sau trong vòng 5 phút đọc lại với giá 0,1 thay vì 2 USD / triệu token. `user` là phần đổi theo từng lần."""
         tool = {"name": self.TOOL, "description": "Trả kết quả đúng khuôn yêu cầu.",
                 "input_schema": schema.model_json_schema()}
         err = ""
+        # Các model mới (Sonnet 5.5, Opus 5.5, Fable 5.x) trả lỗi 400 với tool_choice "tool"/"any" (ép gọi công cụ), nên dùng "auto"
+        # và dặn rõ trong lời nhắc; không gọi công cụ hoặc sai khuôn thì vòng lặp này thử lại (tối đa 2 lần).
+        steer = f"\n\nTrả kết quả bằng cách gọi công cụ {self.TOOL} (bắt buộc), không viết câu trả lời ngoài công cụ."
         for _ in range(2):
-            content = [self._image_block(Path(p)) for p in images] + [{"type": "text", "text": user + err}]
+            content = [self._image_block(Path(p)) for p in images]
+            if shared:
+                content.append({"type": "text", "text": shared, "cache_control": {"type": "ephemeral"}})
+            content.append({"type": "text", "text": user + steer + err})
             if self.meter:
                 self.meter.check()  # chạm trần chi phí của job thì ném CostCapExceeded, không gọi tiếp
             model = self.cfg.model_for(agent)
+            kw: dict = {}
+            effort = self.cfg.effort_for(agent)
+            if effort:
+                kw["output_config"] = {"effort": effort}   # mức suy nghĩ: chữ AI viết ra (kể cả suy nghĩ) là phần đắt nhất
             resp = self._c().messages.create(
-                model=model, max_tokens=8000, system=system,
+                model=model, max_tokens=16000,  # chừa chỗ cho phần suy nghĩ của model (tính trong max_tokens)
+                # lời dặn của agent không đổi trong một job: đánh dấu bộ nhớ đệm (công cụ + lời dặn là phần đầu của lời nhắc)
+                system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
                 messages=[{"role": "user", "content": content}], tools=[tool],
-                tool_choice={"type": "tool", "name": self.TOOL},
+                tool_choice={"type": "auto"}, **kw,
             )
             u = self.usage.setdefault(agent, [0, 0])
             u[0] += getattr(resp.usage, "input_tokens", 0)

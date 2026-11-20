@@ -20,6 +20,20 @@
     "script": null,
     "critic": null
   },
+  "efforts": {
+    "_ghi_chu": "Mức suy nghĩ từng agent: low | medium | high | xhigh | max. Chữ AI viết ra (kể cả suy nghĩ) chiếm ~72% chi phí job đo được ngày 19/11/2026 nên đây là cần gạt chính. Bỏ trống một agent = mặc định của model (Sonnet 5.5: high). Chưa đo chất lượng ở từng mức: sau khi đổi, chạy lại job mẫu và so chi phí + lỗi critic.",
+    "orchestrator": "low",
+    "footage": "low",
+    "script": "medium",
+    "edit": "medium",
+    "critic": "medium"
+  },
+  "project_assets_max_mb": 1500,
+  "_ghi_chu_assets": "Tài nguyên của project (thư mục cấp 1 dưới footage_root): thư mục con tên logo / ảnh sản phẩm / video AI được chép về mỗi job (video AI tối đa 12 clip và project_assets_max_mb MB). Chúng nằm ngoài cấp trên cùng của footage nên không tốn phí nhận dạng lời.",
+  "chat_daily_usd": 0.30,
+  "_ghi_chu_chat": "Hỏi đáp tự do trong chat Telegram (chỉ đọc, dùng Claude Haiku 5.5 trừ khi đặt models.chat). chat_daily_usd: hạn mức USD mỗi người mỗi ngày (null = không giới hạn). Mỗi câu hỏi thường dưới 0,01 USD.",
+  "videofac_import": "D:/duong-dan-toi/tool-dung-video/import.js",
+  "_ghi_chu_videofac": "videofac_import: import.js của VideoFac (repo Marketing, thư mục TEAM CONTENT/tool-dung-video), bật lệnh /chinhtay + /xong ở Duyệt 2. Bỏ khóa này = không có nhánh chỉnh tay. node: lệnh Node (cần Node 22 trở lên).",
   "ffmpeg": "ffmpeg",
   "ffprobe": "ffprobe",
   "anthropic_key_env": "ANTHROPIC_API_KEY",

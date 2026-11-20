@@ -37,7 +37,14 @@ def doctor(cfg: Config) -> list[str]:
     if str(wp).startswith("\\\\"):
         out.append("CẢNH BÁO work_root đang trên mạng (UNC). Nên đặt ở ổ nội bộ để cắt/render nhanh.")
     out.append("== Khóa bí mật (chỉ báo có/không, không in giá trị) ==")
-    out.append(f"{ok(bool(os.environ.get(cfg.anthropic_key_env)))} {cfg.anthropic_key_env}")
+    from .llm import has_ant_profile
+
+    if os.environ.get(cfg.anthropic_key_env):
+        out.append(f"OK  Claude API: dùng {cfg.anthropic_key_env}")
+    elif has_ant_profile():
+        out.append("OK  Claude API: dùng đăng nhập `ant auth login` (không cần key)")
+    else:
+        out.append(f"THIẾU Claude API: chạy `ant auth login` hoặc đặt {cfg.anthropic_key_env}")
     out.append(f"{ok(bool(os.environ.get(cfg.telegram_token_env)))} {cfg.telegram_token_env}")
     out.append(f"{ok(bool(cfg.allowed_user_ids))} danh sách người được giao việc: {len(cfg.allowed_user_ids)} người")
     out.append("== Agent ==")

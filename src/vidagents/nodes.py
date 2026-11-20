@@ -17,6 +17,8 @@ from typing import Any, Callable
 from pydantic import ValidationError
 
 from . import factcheck as FC
+from . import handedit as H
+from . import projectassets as PA
 from . import schemas as S
 from . import workspace as W
 from .config import Config
@@ -82,6 +84,43 @@ def render_script_md(doc: S.ScriptDoc, state: dict, vt: S.VideoType) -> str:
 
 def _is_under(path: Path, root: Path) -> bool:
     return path == root or root in path.parents
+
+
+def brand_kits(cfg: Config) -> list[str]:
+    """Thương hiệu đã có bộ nhận diện (`<projects_root>/_brands/<tên>/brand.json`)."""
+    d = cfg.projects_root / "_brands"
+    try:
+        return sorted(p.parent.name for p in d.glob("*/brand.json") if SLUG.match(p.parent.name))
+    except OSError:
+        return []
+
+
+def check_request(cfg: Config, types, footage_dir: str, video_type: str, brand: str) -> list[str]:
+    """Kiểm yêu cầu giao việc TRƯỚC khi tạo job (bot gọi ngay khi nhận tin; intake gọi lại để chắc).
+    Trả danh sách lỗi viết cho người giao việc đọc, kèm gợi ý sửa. Rỗng = hợp lệ. Không đọc nội dung file, không tốn tiền."""
+    errs: list[str] = []
+    p = Path(footage_dir)
+    if p.is_file() or (not p.exists() and p.suffix == "" and any(p.with_suffix(e).is_file() for e in (".MP4", ".mp4", ".MOV", ".mov"))):
+        errs.append(f"'{p.name}' là một FILE video, không phải thư mục. Gửi thư mục chứa các clip, ví dụ: \"{p.parent}\" "
+                    f"({W.media_summary(p.parent, depth=1) or 'không thấy media'})")
+    elif not p.is_dir():
+        hint = f" Thư mục cha \"{p.parent}\" có: {W.media_summary(p.parent, depth=1) or 'không thấy media'}." if p.parent.is_dir() else ""
+        errs.append(f"Không tìm thấy thư mục footage \"{footage_dir}\".{hint}")
+    else:
+        try:
+            if not _is_under(p.resolve(strict=True), cfg.footage_root.resolve()):
+                errs.append(f"Thư mục footage nằm ngoài khu vực cho phép của máy (chỉ nhận thư mục trong {cfg.footage_root})")
+        except OSError:
+            errs.append(f"Không đọc được thư mục footage \"{footage_dir}\"")
+    kits = brand_kits(cfg)
+    if not SLUG.match(brand or ""):
+        errs.append(f"Thương hiệu '{brand}' không hợp lệ: chỉ chữ thường không dấu, số, gạch nối. Đang có: {', '.join(kits) or '(chưa có)'}")
+    elif brand not in kits:
+        errs.append(f"Chưa có bộ nhận diện thương hiệu '{brand}' (logo, màu, nhạc, chữ cấm) trong {cfg.projects_root / '_brands'}. "
+                    f"Đang có: {', '.join(kits) or '(chưa có)'}. Nhờ người quản trị tạo trước rồi giao lại.")
+    if video_type not in types:
+        errs.append(f"Loại video '{video_type}' không có. Chọn một: " + ", ".join(sorted(types)))
+    return errs
 
 
 def critic_summary(findings: list[dict]) -> str:
@@ -152,20 +191,11 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
 
     # ───────────── 1. nhận job ─────────────
     def intake(state: dict) -> dict:
-        errs: list[str] = []
         # chạy lại intake (tiếp tục sau lỗi) thì nguồn vẫn là thư mục gốc trên NAS, không phải bản chép
         footage = Path(state.get("source_dir") or state["footage_dir"])
-        try:
+        errs = check_request(cfg, d.types, str(footage), state.get("video_type", ""), state.get("brand", ""))
+        if not errs:
             rp = footage.resolve(strict=True)
-            if not _is_under(rp, cfg.footage_root.resolve()):
-                errs.append("Thư mục footage nằm ngoài khu vực cho phép của máy")
-        except OSError:
-            rp = footage
-            errs.append("Không tìm thấy thư mục footage")
-        if not SLUG.match(state.get("brand", "")):
-            errs.append("Tên thương hiệu chỉ gồm chữ thường không dấu, số, gạch nối (vd: femfresh)")
-        if state.get("video_type") not in d.types:
-            errs.append("Loại video không có. Các loại hiện có: " + ", ".join(sorted(d.types)))
         if errs:
             note(state, "Không nhận được job: " + "; ".join(errs))
             sync(state, status="cancelled", stage="intake", note="; ".join(errs))
@@ -189,6 +219,13 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
         ed = rp / "edit"
         ed.mkdir(exist_ok=True)
         (ed / "brief.md").write_text(state.get("brief_text", ""), encoding="utf-8")
+        try:   # tài nguyên của project (logo, ảnh sản phẩm, video AI): chép về edit\project-assets, KHÔNG nằm cấp trên cùng nên không tốn phí Scribe
+            found = PA.collect(cfg, rp_src)
+            if found.any():
+                PA.stage(cfg, found, ed)
+                note(state, f"Dùng tài nguyên của project: {found.summary()}." + "".join(f"\n⚠ {n}" for n in found.notes))
+        except Exception as e:  # noqa: BLE001 - thiếu tài nguyên không được làm hỏng job: dựng như cũ, chỉ báo
+            note(state, f"⚠ Không đọc được tài nguyên của project ({e.__class__.__name__}), dựng không có logo/ảnh/video AI của project.")
         seq = state["job_id"].rsplit("-", 1)[-1]
         name = state.get("video_name") or f"{state['brand']}-{vt.id}-{seq}"
         mode = state.get("mode_override") or ("" if vt.suggested_mode == "auto" else vt.suggested_mode)
@@ -202,13 +239,17 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
     # ───────────── 2. trích brief + hỏi thiếu ─────────────
     def extract_brief(state: dict) -> dict:
         vt = vt_of(state)
-        user = ("Trích các ô của brief từ nội dung bên dưới. Chỉ ghi điều có trong brief, ô nào không có thì để trống. "
-                "Tuyệt đối không tự điền giá, ưu đãi, lợi ích, CTA.\n"
-                f"Các ô riêng của dạng '{vt.name_vi}' đặt trong extra với khóa: "
-                f"{[k[6:] for k in vt.required_brief if k.startswith('extra.')]}\n\n"
-                + wrap_data("brief", state.get("brief_text", "")))
-        brief = d.llm.structured(agent="orchestrator", system=d.skills.system_prompt("orchestrator", state),
-                                 user=user, schema=S.BriefExtract)
+        if state.get("brief_prefill") and not state.get("info_rounds"):
+            # phiếu brief điền sẵn đã được đọc bằng luật cố định lúc nhận: không gọi AI, không suy diễn
+            brief = S.BriefExtract.model_validate(state["brief_prefill"])
+        else:
+            user = ("Trích các ô của brief từ nội dung bên dưới. Chỉ ghi điều có trong brief, ô nào không có thì để trống. "
+                    "Tuyệt đối không tự điền giá, ưu đãi, lợi ích, CTA.\n"
+                    f"Các ô riêng của dạng '{vt.name_vi}' đặt trong extra với khóa: "
+                    f"{[k[6:] for k in vt.required_brief if k.startswith('extra.')]}\n\n"
+                    + wrap_data("brief", state.get("brief_text", "")))
+            brief = d.llm.structured(agent="orchestrator", system=d.skills.system_prompt("orchestrator", state),
+                                     user=user, schema=S.BriefExtract)
         brief.brand = state["brand"]
         missing = S.missing_fields(brief, vt)
         S.dump_json(Path(state["edit_dir"]) / "brief.json", brief)
@@ -315,15 +356,39 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
                 "steps": [step(state, "footage", "footage", mode=mode, prep_skipped=res.skipped)]}
 
     # ───────────── 4. kịch bản ─────────────
+    def files_hint(state: dict) -> str:
+        """Đường dẫn thật của các clip để AI ghi đúng vào edl.sources (chế độ B); nếu không, EDL ghi tên clip rồi dựng bị lỗi."""
+        if state.get("mode") != "B":
+            return ""
+        clips = [p.as_posix() for p in S.clips_in(state["footage_dir"])]
+        man = PA.load_manifest(state["edit_dir"])
+        return ("\nTrong edl.sources dùng ĐÚNG các đường dẫn ở file_nguon (khóa A, B, C...). Mọi gaps phải có source là KHÓA trong sources, "
+                "start là giây trong clip đó (hình nền dưới thẻ; chưa có ý thì lấy cuối đoạn trước thẻ) và seconds là số giây.\n"
+                + wrap_data("file_nguon", json.dumps(clips, ensure_ascii=False))
+                + (wrap_data("tai_nguyen_project", json.dumps({k: man[k] for k in ("logo", "anh_san_pham", "video_ai") if man.get(k)}, ensure_ascii=False))
+                   + PA.usage_hint(man) if any(man.get(k) for k in ("logo", "anh_san_pham", "video_ai")) else ""))
+
+    def edl_errors(state: dict, mode: str, edl: Any) -> list[str]:
+        """Tự sửa lỗi máy móc của EDL (đường dẫn clip, nền thẻ) rồi kiểm khuôn + file nguồn có thật. Rỗng = dựng được."""
+        if mode == "B" and isinstance(edl, dict):
+            S.normalize_edl_b(edl, state["footage_dir"], state.get("brief"), PA.load_manifest(state["edit_dir"]))
+        errs = S.validate_edl(mode, edl)
+        if not errs and mode == "B":
+            errs = S.missing_sources(edl)
+        return errs
+
     def script(state: dict) -> dict:
         vt, ed, mode = vt_of(state), Path(state["edit_dir"]), state["mode"]
         fb = [f for f in state.get("feedback", []) if f.get("kind") == "human"]
-        user = (f"Dạng video: {vt.name_vi} · độ dài gợi ý {vt.target_seconds or '?'} s · chế độ dựng {mode}.\n"
-                f"Ghi chú dạng: {vt.notes}\n"
-                + wrap_data("brief", state.get("brief_text", ""))
-                + wrap_data("brief_da_trich", _read(ed / "brief.json"))
-                + wrap_data("bao_cao_footage", _read(ed / "footage_report.json"))
-                + wrap_data("thuong_hieu", _read(cfg.projects_root / "_brands" / state["brand"] / "brand.json", 6000)))
+        # shared = phần giống nhau giữa các lần gọi (gọi lại khi EDL sai khuôn, khi người duyệt góp ý...): được lưu bộ nhớ đệm
+        shared = (f"Dạng video: {vt.name_vi} · độ dài gợi ý {vt.target_seconds or '?'} s · chế độ dựng {mode}.\n"
+                  f"Ghi chú dạng: {vt.notes}\n"
+                  + wrap_data("brief", state.get("brief_text", ""))
+                  + wrap_data("brief_da_trich", _read(ed / "brief.json"))
+                  + wrap_data("bao_cao_footage", _read(ed / "footage_report.json"))
+                  + wrap_data("thuong_hieu", _read(cfg.projects_root / "_brands" / state["brand"] / "brand.json", 6000))
+                  + files_hint(state))
+        user = ""
         if fb:
             user += ("\nNgười duyệt đã góp ý, SỬA THEO các góp ý (mới nhất ở cuối):\n"
                      + wrap_data("gop_y", json.dumps([f["note"] for f in fb], ensure_ascii=False))
@@ -331,13 +396,13 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
         sysmsg = d.skills.system_prompt("script", state)
 
         def gen(extra: str = "") -> S.ScriptDoc:
-            return d.llm.structured(agent="script", system=sysmsg, user=user + extra, schema=S.ScriptDoc)
+            return d.llm.structured(agent="script", system=sysmsg, shared=shared, user=user + extra, schema=S.ScriptDoc)
 
         doc = gen()
-        errs = S.validate_edl(mode, doc.edl)
+        errs = edl_errors(state, mode, doc.edl)
         if errs:
             doc = gen("\n\nLần trước EDL sai khuôn: " + "; ".join(errs) + ". Sửa lại cho đúng khuôn.")
-            errs = S.validate_edl(mode, doc.edl)
+            errs = edl_errors(state, mode, doc.edl)
             if errs:
                 raise S.SchemaError("EDL sai khuôn sau 2 lần: " + "; ".join(errs))
         style = doc.style if doc.style and SLUG.match(doc.style) else None
@@ -386,6 +451,15 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
     # ───────────── 6. dựng ─────────────
     def _build(state: dict, action: str) -> tuple[dict, dict]:
         ed = Path(state["edit_dir"])
+        if state["mode"] == "B" and (ed / "edl.json").exists():
+            # EDL đã duyệt nhưng có thể còn lỗi máy móc (đường dẫn clip, nền thẻ): sửa trước khi chạy lệnh dựng, ghi bản cũ thành edl-vN
+            raw = (ed / "edl.json").read_text(encoding="utf-8")
+            edl = json.loads(raw)
+            if S.normalize_edl_b(edl, state["footage_dir"], state.get("brief"), PA.load_manifest(ed)):
+                _versioned_write(ed / "edl.json", json.dumps(edl, ensure_ascii=False, indent=2))
+            errs = S.validate_edl("B", edl) or S.missing_sources(edl)
+            if errs:
+                raise S.SchemaError("EDL chưa dựng được: " + "; ".join(errs))
         v = vars_for(state, "edit")
         res = d.tools.run("edit", action, state["mode"], v, cwd=ed, approvals=state.get("approvals", {}),
                           owner=state["job_id"], on_wait=on_wait_for(state))
@@ -420,7 +494,7 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
         findings = state.get("critic_findings", []) if source == "critic" else []
         human = [f["note"] for f in state.get("feedback", [])[-3:] if f.get("kind") == "human"] if source == "human" else []
         user = ("Sửa EDL hiện tại để khắc phục các điểm dưới đây. Chỉ đổi những chỗ cần thiết; cái gì không sửa tự động được "
-                "thì đưa vào unfixable.\n" + wrap_data("edl_hien_tai", _read(ed / "edl.json", 60000))
+                "thì đưa vào unfixable.\n" + wrap_data("edl_hien_tai", _read(ed / "edl.json", 60000)) + files_hint(state)
                 + wrap_data("loi_critic", json.dumps(findings, ensure_ascii=False))
                 + wrap_data("gop_y_nguoi_duyet", json.dumps(human, ensure_ascii=False)))
         sysmsg = d.skills.system_prompt("edit", state)
@@ -429,10 +503,10 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
             return d.llm.structured(agent="edit", system=sysmsg, user=user + extra, schema=S.FixPlan)
 
         plan = gen()
-        errs = S.validate_edl(mode, plan.edl)
+        errs = edl_errors(state, mode, plan.edl)
         if errs:
             plan = gen("\n\nLần trước EDL sai khuôn: " + "; ".join(errs))
-            errs = S.validate_edl(mode, plan.edl)
+            errs = edl_errors(state, mode, plan.edl)
             if errs:
                 raise S.SchemaError("EDL sau khi sửa sai khuôn: " + "; ".join(errs))
         rounds = state.get("critic_fix_rounds", 0) + (1 if source == "critic" else 0)
@@ -456,6 +530,17 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
     # ───────────── 7. critic (2 lớp, nguyên tắc 3) ─────────────
     def _factcheck(state: dict) -> FC.FactCheck:
         ed = Path(state["edit_dir"])
+        if state.get("hand_edited"):
+            # bản chỉnh tay: edl/overlays/captions của skill đã cũ (người sửa trong VideoFac), chỉ phụ đề .srt của bản xuất là chữ thật
+            outs = state.get("outputs", {})
+            srt = Path(outs["srt"]) if outs.get("srt") else None
+            truth = FC.load_truth(state.get("brief_text", ""), ed, cfg.projects_root / "_brands" / state["brand"] / "brand.json")
+            truth += FC.strings_of(state.get("brief"))
+            res = FC.check(truth_texts=truth, displayed=FC.load_displayed(Path(outs.get("final", ed)).parent, None, srt), script_lines=[],
+                           brief=state.get("brief"), vt=vt_of(state))
+            if not srt:
+                res.notes.append("Bản xuất không kèm phụ đề .srt nên chưa đối chiếu được giá/ưu đãi trong chữ.")
+            return res
         v = vars_for(state, "critic")
         proj = Path(v["project_dir"])
         name = state.get("video_name", "")
@@ -481,11 +566,16 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
             notes.append(f"Chưa có file {'bản render' if stage == 'final' else 'bản xem trước'} để soi nên bỏ qua critic ở bước này.")
         else:
             out_dir.mkdir(parents=True, exist_ok=True)
-            # lớp 1: script có sẵn của skill
-            res = d.tools.run("critic", f"critic_{stage}", state["mode"], vars_for(state, "critic", target=target,
-                              critic_out=str(out_dir)), cwd=ed, approvals=state.get("approvals", {}),
-                              owner=state["job_id"], on_wait=on_wait_for(state))
-            if res.skipped:
+            hand = bool(state.get("hand_edited"))
+            # lớp 1: script có sẵn của skill. Không chạy trên bản chỉnh tay: critic.py đọc timeline.json của bản dựng gốc,
+            # mà người đã sửa trong VideoFac nên số liệu đó sai; chạy sẽ cho báo cáo sai thay vì không có báo cáo.
+            res = (d.tools.run("critic", f"critic_{stage}", state["mode"], vars_for(state, "critic", target=target,
+                               critic_out=str(out_dir)), cwd=ed, approvals=state.get("approvals", {}),
+                               owner=state["job_id"], on_wait=on_wait_for(state)) if not hand else None)
+            if hand:
+                notes.append("Lớp 1 (script critic của skill) không chạy trên bản chỉnh tay: cần dữ liệu của bản dựng gốc. "
+                             "Đã chạy lớp 2 (AI xem khung hình) và đối chiếu giá/ưu đãi trong phụ đề.")
+            elif res.skipped:
                 notes.append("Lớp 1 (script critic) chưa được khai báo cho chế độ này.")
             elif res.soft_failed:
                 notes.append("Lớp 1 (script critic) chạy lỗi, bỏ qua lớp này: " + "; ".join(f["why"][:200] for f in res.soft_failed))
@@ -514,7 +604,10 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
                 agent="critic", system=sysmsg, schema=S.Layer2Report, images=imgs[:8],
                 user="Soi các khung hình theo brief và thương hiệu: giá/ưu đãi/CTA trên màn hình có khớp brief không, tên "
                      "và logo thương hiệu đúng không, có lộ thương hiệu cần tránh không, chữ cấm, hook giây 0-1, che mặt/sản phẩm. "
-                     "Không chắc thì đặt needs_human=true, đừng đoán là đạt.\n" + wrap_data("brief", state.get("brief_text", ""))
+                     "Không chắc thì đặt needs_human=true, đừng đoán là đạt.\n"
+                     + ("Bản này do NGƯỜI chỉnh tay trong VideoFac sau bản dựng của hệ thống; kịch bản dưới đây là bản gốc trước khi chỉnh, "
+                        "nội dung có thể khác hợp lệ. Chỉ báo lỗi so với brief và thương hiệu.\n" if hand else "")
+                     + wrap_data("brief", state.get("brief_text", ""))
                      + wrap_data("thuong_hieu", _read(cfg.projects_root / "_brands" / state["brand"] / "brand.json", 6000))
                      + wrap_data("kich_ban", _read(ed / "script.md", 8000)))
             for f in l2.findings:
@@ -533,29 +626,77 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
         upd: dict = {"critic_findings": fd, "critic_has_heavy": heavy, "critic_stage": stage, "stage": f"critic_{stage}",
                      "steps": [step(state, f"critic_{stage}", "critic", heavy=sum(f.severity == "nang" for f in findings),
                                     medium=sum(f.severity == "vua" for f in findings), notes=notes)]}
-        if heavy:
+        if heavy and state.get("hand_edited"):
+            pass  # bản chỉnh tay không có "AI sửa EDL" (sẽ dựng lại và mất phần người đã chỉnh): hỏi người ở hand_edit_review
+        elif heavy:
             if state.get("critic_fix_rounds", 0) < cfg.max_critic_rounds:
                 upd["fix_source"] = "critic"
+                # người giao thấy tin này thì biết bot đang tự sửa (im lặng vài phút là bình thường), chưa cần làm gì
+                note(state, f"{critic_summary(fd).splitlines()[0]}. Đang tự sửa lỗi nặng "
+                            f"(vòng {state.get('critic_fix_rounds', 0) + 1}/{cfg.max_critic_rounds}), chưa cần bạn làm gì. "
+                            "Sửa xong sẽ gửi bản xem trước để bạn duyệt.")
             else:
                 upd["escalation"] = {"reason": f"Critic vẫn còn lỗi nặng sau {cfg.max_critic_rounds} vòng sửa (nguyên tắc 5)",
                                      "on_continue": "approve_2" if stage == "preview" else "deliver"}
         return upd
 
     # ───────────── 8. duyệt 2 ─────────────
+    def cost_advice(state: dict) -> list[str]:
+        """Khối chi phí + lựa chọn ở Duyệt 2: tiếp tục bằng AI (tốn tiền mỗi vòng) hay chỉnh tay (không tốn AI).
+        Số tiền một vòng lấy từ chính các lần gọi trước của job này; chưa có thì ước thô và nói rõ là ước."""
+        if not d.meter:
+            return []
+        jid = state["job_id"]
+        t = d.meter.job_total(jid)
+        if not t["calls"]:
+            return []
+        cap, ba = d.meter.cap_for(jid), t["by_agent"]
+
+        def avg(agent: str) -> float | None:
+            x = ba.get(agent)
+            return x["usd"] / x["calls"] if x and x["calls"] else None
+
+        e, c = avg("edit"), avg("critic")
+        measured = e is not None and c is not None
+        crit = c if c is not None else 0.1
+        rnd = (e if e is not None else 0.1) + crit
+        rough = "" if measured else " (ước thô, job này chưa có số đo)"
+        spent = t["usd"]
+        out = ["", "CHI PHÍ AI" + (f" (đã dùng ~${spent:.2f}" + (f" / trần ${cap:.2f})" if cap else ")")),
+               f"• /duyet: render bản cuối chạy trên máy, không tốn AI; chỉ soi lỗi bản cuối ~${crit:.2f}.",
+               f"• /sua <góp ý>: AI sửa rồi soi lại, mỗi vòng ~${rnd:.2f}{rough}"
+               + (f", trần còn đủ ~{max(0, int((cap - spent - crit) // rnd))} vòng." if cap and rnd > 0 else "."),
+               f"• /chinhtay {jid}: chỉnh tay bằng VideoFac, không tốn AI để sửa (sau /xong chỉ soi lỗi bản cuối ~${crit:.2f}). "
+               "Hợp với lỗi nhỏ về chữ (phụ đề ngắt sai, lệch thời gian, đổi từ) hoặc khi bạn đã sửa vài vòng. Bot đặt gói lên NAS, "
+               "người chỉnh mở bằng VideoFac, xuất xong thì /xong. Không render lại; critic bản cuối thiếu lớp soi dữ liệu dựng của skill."]
+        n = state.get("human_revisions", 0)
+        if n >= 2:
+            out.append(f"⚠ Đã sửa {n} lần bằng AI. Lỗi còn lại nhỏ thì nên chuyển sang chỉnh tay cho rẻ và nhanh.")
+        if cap and spent + rnd > cap:
+            out.append(f"⚠ Một vòng sửa nữa có thể chạm trần chi phí. Cần thì nâng trần: /nangtran {jid} <USD>.")
+        return out
+
     def approve_2(state: dict) -> dict:
         outs, jid = state.get("outputs", {}), state["job_id"]
         lines = [f"DUYỆT 2 · bản dựng '{state['video_name']}'", critic_summary(state.get("critic_findings", []))]
         if state.get("critic_has_heavy"):
             lines.append("⚠ Vẫn còn lỗi nặng chưa sửa được (bạn quyết định).")
         lines.append(f"Bản xem trước: {outs.get('preview') or 'chưa có file; xem bằng công cụ xem trước của skill trên máy dựng'}")
-        lines += ["", f"/duyet {jid} để render bản cuối   ·   /sua {jid} <góp ý>   ·   /huy {jid}"]
+        lines += cost_advice(state)
+        lines += ["", f"/duyet {jid} để render bản cuối   ·   /sua {jid} <góp ý>   ·   /chinhtay {jid}   ·   /huy {jid}"]
         files = [outs[k] for k in ("preview",) if outs.get(k)]
         sync(state, status="waiting_approval", stage="duyet_2")
         p = ask(state, "approval", "\n".join(lines), files)
-        if p is None or p.action not in ("approve", "revise", "cancel"):
+        if p is None or p.action not in ("approve", "revise", "cancel", "handedit"):
             return {"gate_result": "ignored"}
         if p.action == "cancel":
             return {"gate_result": "cancel", "cancel_reason": "Người giao hủy ở bước duyệt 2", "status": "cancelled"}
+        if p.action == "handedit":
+            why = H.available(cfg)
+            if why or not outs.get("project_dir"):
+                note(state, f"Chưa chỉnh tay được: {why or 'job chưa có dự án dựng để đóng gói'} Chọn /duyet, /sua hoặc /huy.")
+                return {"gate_result": "ignored"}
+            return {"gate_result": "handedit"}
         if p.action == "approve":
             sync(state, status="running", stage="duyet_2_ok")
             return {"gate_result": "approve", "approvals": {**state.get("approvals", {}), "duyet_2": stamp(p)},
@@ -567,6 +708,72 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
         if n > cfg.max_revisions:
             upd["escalation"] = {"reason": f"Đã yêu cầu sửa bản dựng quá {cfg.max_revisions} lần", "on_continue": "render"}
         return upd
+
+    # ───────────── 8b. chỉnh tay bằng VideoFac (nhánh của Duyệt 2) ─────────────
+    def hand_edit(state: dict) -> dict:
+        """Đóng gói dự án lên NAS cho người chỉnh. Lỗi (NAS, Node, VideoFac) thì job dừng và báo; /tieptuc để thử lại."""
+        outs, jid = state.get("outputs", {}), state["job_id"]
+        dest = H.pack_dir(state["source_dir"], jid)
+        sync(state, status="running", stage="hand_edit")
+        info = H.pack(cfg, project_dir=outs["project_dir"], edl=Path(state["edit_dir"]) / "edl.json", name=state["video_name"], dest=dest)
+        return {"outputs": {**outs, "videofac_dir": str(dest), "videofac_cmd": info["cmd"]}, "stage": "hand_edit",
+                "steps": [step(state, "hand_edit", "edit", files=info["files"], mb=round(info["bytes"] / 1048576, 1))]}
+
+    def hand_edit_wait(state: dict) -> dict:
+        """Cổng chờ người chỉnh tay xong (/xong). Chỉ đọc trước interrupt."""
+        outs, jid = state.get("outputs", {}), state["job_id"]
+        text = "\n".join([
+            f"CHỈNH TAY BẰNG VIDEOFAC · '{state['video_name']}'",
+            "Gói chỉnh tay đã đặt trên NAS (dung lượng và đường dẫn tương đối, mở được trên máy khác):",
+            f"  {outs.get('videofac_dir', '?')}",
+            "Người chỉnh (máy đã cài VideoFac 0.20 trở lên, đọc/ghi được thư mục trên): bấm đúp Mo-trong-VideoFac.cmd trong thư mục đó, "
+            "chỉnh, bấm 'Xuất video'. Bản xuất tự về thư mục export của gói. Một người mở một lần, VideoFac tự khóa.",
+            "Chi phí AI trong lúc chờ: 0. Sau /xong bot kiểm khung hình 1080x1920, tiếng, rồi soi lỗi bản cuối 1 lần (AI xem khung hình + "
+            "đối chiếu giá/ưu đãi trong phụ đề, ~$0.1). Không render lại; thiếu lớp soi dữ liệu dựng của skill vì bản đã bị chỉnh tay.",
+            "", f"Xuất xong nhắn: /xong {jid}   ·   bỏ job: /huy {jid}"])
+        sync(state, status="waiting_approval", stage="hand_edit")
+        p = ask(state, "approval", text)
+        if p is None or p.action not in ("done", "cancel"):
+            return {"gate_result": "ignored"}
+        if p.action == "cancel":
+            return {"gate_result": "cancel", "cancel_reason": "Người giao hủy khi chỉnh tay", "status": "cancelled"}
+        return {"gate_result": "done", "status": "running"}
+
+    def hand_edit_done(state: dict) -> dict:
+        """Nhận bản xuất: kiểm lại, tạo bản nhẹ, đối chiếu giá/ưu đãi trong phụ đề, rồi giao."""
+        outs, ed = state.get("outputs", {}), Path(state["edit_dir"])
+        ex = H.find_export(cfg, outs["videofac_dir"])
+        if ex.problems:
+            raise RuntimeError("Bản xuất chưa dùng được: " + " ".join(ex.problems))
+        light = ed / f"{state['video_name']}-1080x1920-nhe.mp4"
+        H.make_light(cfg, ex.mp4, light)
+        note(state, f"Nhận bản chỉnh tay: {ex.info}. Đang soi lỗi bản cuối (AI xem khung hình + đối chiếu giá/ưu đãi trong phụ đề).")
+        sync(state, status="running", stage="hand_edit_done")
+        new = {**outs, "final": str(ex.mp4), "light": str(light), "hand_edited": "1"}
+        if ex.srt:
+            new["srt"] = str(ex.srt)
+        else:
+            new.pop("srt", None)
+        # tiếp theo là critic bản cuối (hand_edited=True: bỏ lớp 1 của skill, giữ lớp 2 + đối chiếu phụ đề), rồi giao hoặc hỏi người
+        return {"outputs": new, "hand_edited": True, "critic_stage": "final",
+                "approvals": {**state.get("approvals", {}), "duyet_2": {"by": str(state["requester_id"]), "at": d.now().isoformat(timespec="seconds"),
+                                                                       "note": "chỉnh tay bằng VideoFac"}},
+                "stage": "hand_edit_done", "steps": [step(state, "hand_edit_done", "edit", export=ex.info)]}
+
+    def hand_edit_review(state: dict) -> dict:
+        """Critic bản chỉnh tay thấy lỗi nặng: người quyết (giao tiếp, chỉnh lại trong VideoFac, hoặc hủy). Không có vòng AI tự sửa."""
+        jid = state["job_id"]
+        text = "\n".join([f"SOI LỖI BẢN CHỈNH TAY · '{state['video_name']}'", critic_summary(state.get("critic_findings", [])),
+                          "⚠ Còn lỗi nặng. Bản chỉnh tay không có vòng AI tự sửa (sẽ dựng lại và mất phần bạn đã chỉnh).", "",
+                          f"/chinhtay {jid} để chỉnh lại trong VideoFac rồi xuất và /xong lại   ·   /duyet {jid} để giao bản này   ·   /huy {jid}"])
+        sync(state, status="waiting_approval", stage="hand_review")
+        p = ask(state, "approval", text, [state.get("outputs", {}).get("light")] if state.get("outputs", {}).get("light") else [])
+        if p is None or p.action not in ("approve", "handedit", "cancel"):
+            return {"gate_result": "ignored"}
+        if p.action == "cancel":
+            return {"gate_result": "cancel", "cancel_reason": "Người giao hủy sau khi soi lỗi bản chỉnh tay", "status": "cancelled"}
+        sync(state, status="running")
+        return {"gate_result": p.action, "status": "running"}
 
     # ───────────── 9. escalate: vượt giới hạn vòng lặp -> hỏi người ─────────────
     def escalate(state: dict) -> dict:
@@ -633,6 +840,9 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
                critic_summary(state.get("critic_findings", [])),
                *([cost] if (cost := d.meter.summary_line(jid) if d.meter else "") else []),
                "Hệ thống KHÔNG tự đăng bài. Bạn kiểm tra rồi đăng."]
+        if o.get("hand_edited"):
+            txt.append("Bản chỉnh tay bằng VideoFac: không render lại; critic bản cuối chạy lớp AI xem khung hình + đối chiếu phụ đề, "
+                       "không có lớp soi dữ liệu dựng của skill. Chữ trên thẻ đồ họa chỉ được AI xem qua khung hình, bạn xem kỹ trước khi đăng.")
         if state.get("critic_has_heavy"):
             txt.append("⚠ Bản này vẫn còn lỗi nặng theo critic, bạn đã chấp nhận.")
         if dest:
@@ -691,7 +901,9 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
     raw = {
         "intake": intake, "scribe_gate": scribe_gate, "extract_brief": extract_brief, "ask_info": ask_info, "footage": footage, "script": script,
         "approve_1": approve_1, "edit_build": edit_build, "edit_fix": edit_fix, "critic": critic,
-        "approve_2": approve_2, "escalate": escalate, "render": render, "deliver": deliver, "lessons": lessons,
+        "approve_2": approve_2, "hand_edit": hand_edit, "hand_edit_wait": hand_edit_wait, "hand_edit_done": hand_edit_done,
+        "hand_edit_review": hand_edit_review,
+        "escalate": escalate, "render": render, "deliver": deliver, "lessons": lessons,
         "lesson_gate": lesson_gate, "cancel_end": cancel_end,
     }
 

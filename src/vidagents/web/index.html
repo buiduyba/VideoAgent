@@ -3,141 +3,357 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>vidagents - theo dõi</title>
+<link rel="icon" href="data:,">
 <style>
-:root{--bg:#faf9f5;--card:#fff;--soft:#f1efe8;--text:#1f1e1d;--text2:#5f5e5a;--muted:#888780;--line:#e3e1d8;
---acc:#185fa5;--accbg:#e6f1fb;--ok:#3b6d11;--okbg:#eaf3de;--warn:#854f0b;--warnbg:#faeeda;--bad:#a32d2d;--badbg:#fcebeb}
-@media (prefers-color-scheme:dark){:root{--bg:#1c1b1a;--card:#262524;--soft:#2f2e2c;--text:#f0eee6;--text2:#b4b2a9;--muted:#888780;--line:#3a3937;
---acc:#85b7eb;--accbg:#0c447c;--ok:#c0dd97;--okbg:#27500a;--warn:#fac775;--warnbg:#633806;--bad:#f7c1c1;--badbg:#791f1f}}
+:root{color-scheme:light dark;
+  --bg:#f6f4ee;--surface:#fff;--surface2:#f2efe7;--text:#1d1b18;--text2:#57534b;--muted:#6f6a5f;--line:#e4e0d4;--line2:#d3cdbd;
+  --brand:#cd120a;--green:#0f8a45;
+  --info:#1d5fa8;--infobg:#e3edf9;--warn:#8a5300;--warnbg:#fbeed2;--ok:#2d6b14;--okbg:#e4f1d8;--bad:#a82020;--badbg:#fbe4e1;
+  --shadow:0 1px 2px rgba(40,30,10,.05),0 8px 20px -10px rgba(40,30,10,.14);--r:14px;--r2:10px}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#141312;--surface:#1d1c1a;--surface2:#262421;--text:#f1eee6;--text2:#bab6a9;--muted:#9a9588;--line:#34322e;--line2:#46433d;
+  --brand:#ef4a40;--green:#3fbf78;
+  --info:#8ab8ee;--infobg:#12304f;--warn:#f3c473;--warnbg:#4a3009;--ok:#a4d67a;--okbg:#1f3a12;--bad:#f5aaa4;--badbg:#4d1614;
+  --shadow:0 1px 2px rgba(0,0,0,.45)}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,"Segoe UI",sans-serif}
-.wrap{max-width:1180px;margin:0 auto;padding:18px 16px 40px}
-h1{font-size:19px;font-weight:600;margin:0}
-h3{font-size:13px;font-weight:600;margin:0 0 8px;color:var(--text2)}
-.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
-.chips{display:flex;gap:8px;flex-wrap:wrap}
-.chip{font-size:12px;padding:3px 10px;border-radius:8px;background:var(--soft);color:var(--text2)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
-.layout{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:14px}
-@media (max-width:800px){.layout{grid-template-columns:1fr}}
-.job{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);margin-bottom:8px;cursor:pointer}
-.job.sel{outline:2px solid var(--acc)}
-.job b{font-size:14px}
-.row{display:flex;justify-content:space-between;align-items:center;gap:8px}
-.mut{color:var(--text2);font-size:13px}
-.bar{height:5px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:6px}
-.bar i{display:block;height:100%;background:var(--acc);transition:width .4s}
-.bd{font-size:12px;padding:2px 8px;border-radius:8px;white-space:nowrap}
-.s-queued,.s-pending,.s-idle{background:var(--soft);color:var(--text2)}
-.s-running,.s-active{background:var(--accbg);color:var(--acc)}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 "Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif}
+:focus-visible{outline:2px solid var(--info);outline-offset:2px;border-radius:6px}
+.num{font-variant-numeric:tabular-nums}
+.mut{color:var(--muted);font-size:13px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+
+/* khung trang */
+.bar-top{position:sticky;top:0;z-index:5;background:var(--bg);border-top:3px solid var(--brand);border-bottom:1px solid var(--line)}
+.bar-in{max-width:1240px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.mark{width:48px;height:auto;flex:none}
+.brand h1{font-size:17px;line-height:1.2;font-weight:650;margin:0;letter-spacing:-.01em}
+.brand p{margin:1px 0 0;font-size:12px;color:var(--muted)}
+.live{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text2);padding:5px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface);white-space:nowrap}
+.pulse{width:8px;height:8px;border-radius:50%;background:var(--green);animation:lp 2s ease-out infinite}
+.live.off{color:var(--bad);border-color:var(--bad)}.live.off .pulse{background:var(--bad);animation:none}
+@keyframes lp{0%{box-shadow:0 0 0 0 rgba(15,138,69,.5)}100%{box-shadow:0 0 0 8px rgba(15,138,69,0)}}
+.wrap{max-width:1240px;margin:0 auto;padding:16px 16px 40px}
+
+/* thẻ tổng quan */
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:16px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r2);padding:10px 14px;display:flex;flex-direction:column;gap:1px}
+.kpi b{font-size:22px;line-height:1.25;font-weight:650;font-variant-numeric:tabular-nums}
+.kpi span{font-size:12px;color:var(--muted)}
+.kpi.zero b{color:var(--muted);font-weight:500}
+.k-run:not(.zero) b{color:var(--info)}.k-wait:not(.zero) b{color:var(--warn)}.k-stop:not(.zero) b{color:var(--bad)}.k-done:not(.zero) b{color:var(--ok)}
+.k-wait:not(.zero){background:var(--warnbg);border-color:transparent}.k-stop:not(.zero){background:var(--badbg);border-color:transparent}
+
+.layout{display:grid;grid-template-columns:minmax(0,310px) minmax(0,1fr);gap:16px;align-items:start}
+.side{position:sticky;top:84px;max-height:calc(100vh - 100px);overflow:auto;padding:2px 4px 4px 2px;margin:-2px -4px -4px -2px}
+.sec{font-size:12px;font-weight:650;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;box-shadow:var(--shadow)}
+.card h3{font-size:13px;font-weight:650;margin:0 0 10px;color:var(--text2)}
+.empty{color:var(--muted);padding:36px 16px;text-align:center}
+.empty img{display:block;width:64px;margin:0 auto 12px;opacity:.35;filter:grayscale(.3)}
+
+/* danh sách job */
+.job{display:block;width:100%;text-align:left;font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line);border-radius:var(--r2);padding:11px 13px 12px 16px;margin:0 0 8px;cursor:pointer;position:relative;transition:border-color .15s,background .15s}
+.job::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0;background:transparent;transition:background .15s}
+.job:hover{border-color:var(--line2);background:var(--surface2)}
+.job.sel{border-color:var(--line2);background:var(--surface2);box-shadow:var(--shadow)}
+.job.sel::before{background:var(--brand)}
+.job .row{margin-bottom:2px}
+.jid{font-size:13.5px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.job .bar{margin-top:9px}
+.stall{color:var(--warn);font-weight:600}
+
+/* trạng thái */
+.bd{font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;white-space:nowrap;line-height:1.5}
+.bd.lg{font-size:13px;padding:3px 12px}
+.s-queued,.s-pending,.s-idle{background:var(--surface2);color:var(--text2)}
+.s-running,.s-active{background:var(--infobg);color:var(--info)}
 .s-done{background:var(--okbg);color:var(--ok)}
 .s-waiting_approval,.s-waiting_info,.s-waiting{background:var(--warnbg);color:var(--warn)}
 .s-blocked,.s-cancelled,.s-stopped{background:var(--badbg);color:var(--bad)}
-.banner{border-radius:10px;padding:10px 14px;margin-bottom:12px;background:var(--warnbg);color:var(--warn)}
-.banner.bad{background:var(--badbg);color:var(--bad)}
-.banner.ok{background:var(--okbg);color:var(--ok)}
-.flow{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
-.ms{font-size:12px;padding:5px 9px;border-radius:8px;border:1px solid var(--line)}
-.ms small{display:block;color:inherit;opacity:.75;font-size:11px}
-.agents{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:14px}
-.ag{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--card)}
-.ag.active{border:2px solid var(--acc);padding:9px 11px}
-.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:14px}
-.lg{font:12px/1.5 ui-monospace,Consolas,monospace;color:var(--text2);padding:3px 0;border-bottom:1px solid var(--line)}
-.f{font-size:13px;padding:4px 0;border-bottom:1px solid var(--line)}
-.empty{color:var(--muted);padding:30px 0;text-align:center}
-code{font:12px ui-monospace,Consolas,monospace;background:var(--soft);padding:1px 5px;border-radius:5px}
+.bar{height:6px;border-radius:99px;background:var(--line);overflow:hidden}
+.bar.big{height:8px;margin:14px 0 8px}
+.bar i{display:block;height:100%;border-radius:99px;background:var(--green);transition:width .5s}
+.bar[data-s=waiting_approval] i,.bar[data-s=waiting_info] i{background:#e0a030}
+.bar[data-s=blocked] i,.bar[data-s=cancelled] i{background:var(--bad)}
+.bar[data-s=running] i{background:var(--info)}
+
+/* chi tiết job */
+.hero .jt{font-size:19px;font-weight:650;margin:0 0 8px;letter-spacing:-.01em;word-break:break-all}
+.tags{display:flex;flex-wrap:wrap;gap:6px}
+.tag{font-size:12px;padding:2px 10px;border-radius:999px;background:var(--surface2);color:var(--text2);border:1px solid var(--line)}
+.banner{display:flex;gap:11px;align-items:flex-start;border-radius:var(--r2);padding:12px 14px;margin:12px 0;line-height:1.55}
+.banner .bi{flex:none;margin-top:1px}
+.banner.warn{background:var(--warnbg);color:var(--warn)}.banner.bad{background:var(--badbg);color:var(--bad)}
+.banner.ok{background:var(--okbg);color:var(--ok)}.banner.info{background:var(--infobg);color:var(--info)}
+code{font:12px ui-monospace,"Cascadia Mono",Consolas,monospace;background:var(--surface2);padding:1px 6px;border-radius:6px}
+.banner code{background:rgba(127,127,127,.18);color:inherit;cursor:copy;transition:background .15s;display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
+.banner code:hover{background:rgba(127,127,127,.32)}
+.stage{display:grid;grid-template-columns:minmax(0,290px) minmax(0,1fr);gap:16px;margin:12px 0 16px;align-items:start}
+.agents{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+.ag{background:var(--surface);border:1px solid var(--line);border-radius:var(--r2);padding:11px 13px;transition:border-color .2s,box-shadow .2s}
+.ag.active{border-color:var(--info);box-shadow:0 0 0 3px var(--infobg)}
+.agh{display:flex;align-items:center;gap:9px;min-width:0}
+.av{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:12.5px;font-weight:700;background:var(--surface2);color:var(--text2);flex:none}
+.ag.active .av{background:var(--infobg);color:var(--info)}.ag.done .av{background:var(--okbg);color:var(--ok)}
+.aglast{margin:8px 0 6px;min-height:21px;font-size:13px}
+.agm{display:flex;gap:12px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:16px}
+.pills{display:flex;gap:6px;margin-bottom:10px}
+.fl{list-style:none;margin:0;padding:0}
+.fl li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--line);font-size:13px}
+.fl li:first-child{border-top:0}
+.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0 0;padding-top:12px;border-top:1px solid var(--line)}
+.kv dt{font-size:12px;color:var(--muted)}.kv dd{margin:0;font-weight:650;font-variant-numeric:tabular-nums}
+.big-n{font-size:28px;font-weight:650;line-height:1.2;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.meter{height:6px;border-radius:99px;background:var(--line);overflow:hidden;margin:10px 0 8px}
+.meter i{display:block;height:100%;background:var(--green);border-radius:99px}
+.meter.warn i{background:#e0a030}.meter.bad i{background:var(--bad)}
+.out{font:12px ui-monospace,Consolas,monospace;color:var(--text2);padding:6px 0;border-top:1px solid var(--line);word-break:break-all}
+.tl{list-style:none;margin:0;padding:0 0 0 4px}
+.tl li{position:relative;display:flex;gap:12px;padding:6px 0 6px 18px;font-size:13px}
+.tl li::before{content:"";position:absolute;left:3px;top:13px;width:7px;height:7px;border-radius:50%;background:var(--green)}
+.tl li::after{content:"";position:absolute;left:6px;top:21px;bottom:-9px;width:1px;background:var(--line)}
+.tl li:last-child::after{display:none}
+.tl time{font:12px ui-monospace,Consolas,monospace;color:var(--muted);flex:none;padding-top:1px}
+.foot{margin:22px 0 0;text-align:center;color:var(--muted);font-size:12.5px}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#26231f;color:#f1eee6;padding:9px 16px;border-radius:10px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:20;max-width:90vw}
+.toast[hidden]{display:none}
+
+/* Logo Trần Gia treo trên dây: trượt tới mốc job đang ở, đung đưa, sáng các nhãn quanh nó. Luôn nền tối để ánh sáng nhìn rõ ở cả hai giao diện. */
+.lt{--ly:60px;--glow:255,176,64;position:relative;overflow:hidden;isolation:isolate;border-radius:var(--r);padding:14px 12px 16px 0;background:#15120e;border:1px solid #2c2519;color:#e9dfcc;box-shadow:var(--shadow)}
+.lt[data-s=stopped]{--glow:255,100,90}
+.lt::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(250px 190px at 30px var(--ly),rgba(var(--glow),.26),rgba(var(--glow),.08) 55%,transparent 76%)}
+.lt-head{display:flex;justify-content:space-between;align-items:baseline;margin:0 4px 6px 66px}
+.lt-head h3{margin:0;font-size:12px;font-weight:650;letter-spacing:.04em;text-transform:uppercase;color:#a89c85}
+.lt-n{font-size:12px;color:#a89c85;font-variant-numeric:tabular-nums}
+.lt-rope{position:absolute;left:30px;top:0;bottom:0;width:2px;transform:translateX(-50%);background:linear-gradient(#7a6643,#3a3022)}
+.lt ol{list-style:none;margin:0;padding:0 0 0 66px}
+.lt li{--lit:0;position:relative;height:40px;display:flex;align-items:center;gap:10px}
+.lt .dot{width:7px;height:7px;border-radius:50%;flex:none;background:#5b5446}
+.lt li.done .dot{background:#8fbf5a}
+.lt li.active .dot,.lt li.waiting .dot{background:#ffb347}
+.lt li.waiting .dot{animation:ltpulse 1.4s ease-in-out infinite}
+.lt li.stopped .dot{background:#ef6a6a}
+.lt .nm{font-size:14px;line-height:1.25;color:#cdbf9f;opacity:calc(.68 + var(--lit)*.32);
+  color:color-mix(in srgb,#fff1d6 calc(var(--lit)*100%),#9a8f78);
+  text-shadow:0 0 calc(var(--lit)*14px) rgba(var(--glow),calc(var(--lit)*.85))}
+.lt .nm small{display:block;font-size:11px;opacity:.8}
+.lt li.stopped .nm{color:#f3b4ac}
+.lantern{position:absolute;left:30px;top:0;width:60px;height:56px;margin-left:-30px;transform-origin:50% 0;pointer-events:none;z-index:1}
+.lantern svg{display:block;overflow:visible}
+@keyframes ltpulse{50%{opacity:.35}}
+
+@media (max-width:1000px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.layout,.stage{grid-template-columns:1fr}.side{position:static;max-height:none;overflow:visible;margin:0;padding:0}}
+@media (max-width:480px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.brand h1{font-size:15px}.mark{width:40px}.live{padding:4px 9px}.card{padding:14px}}
+@media (prefers-reduced-motion:reduce){.pulse,.lt li.waiting .dot{animation:none}.bar i{transition:none}}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="top"><h1>vidagents &middot; theo dõi job</h1><div class="chips" id="chips"></div></div>
+<header class="bar-top"><div class="bar-in">
+  <div class="brand"><img id="mark" class="mark" src="data:image/png;base64,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" alt="Logo Trần Gia" width="48" height="30">
+    <div><h1>Theo dõi job dựng video</h1><p>Trần Gia &middot; vidagents</p></div></div>
+  <div class="live" id="live" role="status"><span class="pulse"></span><span id="liveTxt">Đang kết nối…</span></div>
+</div></header>
+
+<main class="wrap">
+  <section class="kpis" id="chips" aria-label="Tổng quan"></section>
   <div class="layout">
-    <div id="list"></div>
-    <div id="detail"><div class="card empty">Chưa có job nào. Giao job qua Telegram (<code>/video</code>) rồi quay lại đây.</div></div>
+    <aside class="side"><h2 class="sec">Danh sách job</h2><div id="list"></div></aside>
+    <section id="detail" aria-label="Chi tiết job"></section>
   </div>
-  <p class="mut" style="margin-top:18px">Chỉ để xem, tự làm mới mỗi 2 giây. Duyệt, sửa, hủy vẫn làm qua Telegram.</p>
-</div>
+  <p class="foot">Chỉ để xem, tự làm mới mỗi 2 giây. Duyệt, sửa, hủy vẫn làm qua Telegram.</p>
+</main>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
 <script>
+const EMBLEM=document.getElementById('mark').getAttribute('src');  // ảnh logo nằm ngay trong thẻ img để hiện được cả khi không chạy script
 const ST={queued:'Xếp hàng',running:'Đang chạy',waiting_info:'Chờ thông tin',waiting_approval:'Chờ duyệt',blocked:'Bị dừng',done:'Xong',cancelled:'Đã hủy'};
 const MS={done:'Xong',active:'Đang làm',waiting:'Chờ người',stopped:'Dừng',pending:'Chưa tới'};
 const AG={active:'Đang làm',done:'Đã làm',idle:'Chưa tới lượt'};
 const HUMAN={human:'Người giao',orchestrator:'Điều phối',script:'Script',footage:'Footage',edit:'Edit',critic:'Critic'};
-let sel=null,ov=null,pinned=false;
+const AV={orchestrator:'Đ',script:'S',footage:'F',edit:'E',critic:'C'};
+const ICO={info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',warn:'<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17h.01"/>',
+  stop:'<circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/>',ok:'<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/>'};
+const ico=n=>`<svg class="bi" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICO[n]}</svg>`;
+let sel=null,ov=null;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hm=t=>t?String(t).slice(11,19):'';
 const usd=n=>n==null?'-':'$'+Number(n).toFixed(2);
 async function get(u){const r=await fetch(u,{cache:'no-store'});if(!r.ok)throw new Error(r.status);return r.json();}
+/* Chỉ vẽ lại khi nội dung đổi: giữ được focus bàn phím và vùng đang bôi đen (trang tự làm mới mỗi 2 giây). */
+function setHTML(el,html){if(el.__h===html)return false;el.__h=html;el.innerHTML=html;return true;}
+let toastT=0;
+function toast(msg){const t=$('toast');t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{t.hidden=true;},2200);}
+document.addEventListener('click',e=>{
+  const c=e.target.closest('code[data-copy]');if(!c)return;
+  const txt=c.textContent,ok=()=>toast('Đã chép: '+txt),
+    legacy=()=>{  // trang mở qua địa chỉ mạng nội bộ (http, không phải localhost) thì không có clipboard API: chép bằng vùng chọn
+      const r=document.createRange();r.selectNodeContents(c);const s=getSelection();s.removeAllRanges();s.addRange(r);
+      let done=false;try{done=document.execCommand('copy');}catch(_){}
+      done?ok():toast('Không chép được, đã bôi đen sẵn, bấm Ctrl+C');};
+  navigator.clipboard?navigator.clipboard.writeText(txt).then(ok,legacy):legacy();
+});
+const cmd=s=>`<code data-copy title="Bấm để chép">${s}</code>`;
 
 function bannerFor(j){
-  if(j.status==='blocked')return `<div class="banner bad">Job bị dừng: ${esc(j.note||'không rõ lý do')}. Sau khi xử lý, gõ <code>/tieptuc ${esc(j.job_id)}</code>; nếu do chạm trần chi phí gõ <code>/nangtran ${esc(j.job_id)} &lt;USD&gt;</code>.</div>`;
-  if(j.status==='cancelled')return `<div class="banner bad">Job đã hủy${j.note?': '+esc(j.note):''}.</div>`;
-  if(j.status==='done')return `<div class="banner ok">Hoàn thành. Hệ thống không tự đăng bài, người giao kiểm tra rồi đăng.</div>`;
+  const B=(t,ic,h)=>`<div class="banner ${t}" role="${t==='bad'?'alert':'note'}">${ico(ic)}<div>${h}</div></div>`;
+  const id=esc(j.job_id);
+  if(j.status==='blocked')return B('bad','stop',`Job bị dừng: ${esc(j.note||'không rõ lý do')}. Sau khi xử lý, gõ ${cmd('/tieptuc '+id)}; nếu do chạm trần chi phí gõ ${cmd('/nangtran '+id+' &lt;USD&gt;')}.`);
+  if(j.status==='cancelled')return B('bad','stop',`Job đã hủy${j.note?': '+esc(j.note):''}.`);
+  if(j.status==='done')return B('ok','ok','Hoàn thành. Hệ thống không tự đăng bài, người giao kiểm tra rồi đăng.');
   const w=j.waiting_for;
-  if(w==='approve_1')return `<div class="banner">Đang chờ người giao duyệt lần 1 (kịch bản và hướng dựng). Duyệt bằng <code>/duyet ${esc(j.job_id)}</code> hoặc góp ý <code>/sua ${esc(j.job_id)} ...</code> trên Telegram.</div>`;
-  if(w==='approve_2')return `<div class="banner">Đang chờ người giao duyệt lần 2 (bản xem trước) trước khi render. <code>/duyet ${esc(j.job_id)}</code></div>`;
-  if(w==='info')return `<div class="banner">Đang chờ người giao trả lời thông tin còn thiếu. <code>/bosung ${esc(j.job_id)} ...</code></div>`;
-  if(w==='escalate'){const e=j.escalation||{};return `<div class="banner bad">Vượt giới hạn vòng sửa, cần người quyết: ${esc(e.reason||e.text||e.kind||'xem tin nhắn Telegram')}</div>`;}
-  if(w)return `<div class="banner">Đang chờ người giao.</div>`;
-  if(j.stalled)return `<div class="banner bad">Job không nhúc nhích quá ${ov?ov.stall_minutes:60} phút. Kiểm tra máy render hoặc NAS.</div>`;
+  if(w==='approve_1')return B('warn','warn',`Đang chờ người giao duyệt lần 1 (kịch bản và hướng dựng). Duyệt bằng ${cmd('/duyet '+id)} hoặc góp ý ${cmd('/sua '+id+' ...')} trên Telegram.`);
+  if(w==='approve_2')return B('warn','warn',`Đang chờ người giao duyệt lần 2 (bản xem trước) trước khi render. ${cmd('/duyet '+id)}`);
+  if(w==='info')return B('warn','warn',`Đang chờ người giao trả lời thông tin còn thiếu. ${cmd('/bosung '+id+' ...')}`);
+  if(w==='escalate'){const e=j.escalation||{};return B('bad','warn',`Vượt giới hạn vòng sửa, cần người quyết: ${esc(e.reason||e.text||e.kind||'xem tin nhắn Telegram')}`);}
+  if(w)return B('warn','warn','Đang chờ người giao.');
+  if(j.stalled)return B('bad','warn',`Job không nhúc nhích quá ${ov?ov.stall_minutes:60} phút. Kiểm tra máy render hoặc NAS.`);
   return '';
 }
 
-function renderList(){
-  const L=$('list');
-  if(!ov||!ov.jobs.length){L.innerHTML='<div class="card empty">Chưa có job.</div>';return;}
-  const jobs=[...ov.jobs].sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||''));
-  if(!sel||!jobs.find(j=>j.job_id===sel))sel=jobs[0].job_id;
-  L.innerHTML=jobs.map(j=>`<div class="job ${j.job_id===sel?'sel':''}" data-id="${esc(j.job_id)}">
-    <div class="row"><b>${esc(j.job_id)}</b><span class="bd s-${esc(j.status)}">${esc(ST[j.status]||j.status)}</span></div>
-    <div class="mut">${esc(j.brand)} &middot; ${esc(j.video_type)}</div>
-    <div class="row mut"><span>${j.stalled?'Có thể đang đứng':esc(j.requester)}</span><span>${usd(j.usd)}</span></div>
-    <div class="bar"><i style="width:${j.progress}%"></i></div></div>`).join('');
-  L.querySelectorAll('.job').forEach(n=>n.onclick=()=>{sel=n.dataset.id;pinned=true;renderList();loadDetail();});
+function setLive(ok){
+  $('live').className='live'+(ok?'':' off');
+  $('liveTxt').textContent=ok?'Tự làm mới · '+new Date().toLocaleTimeString('vi-VN'):'Mất kết nối, đang thử lại…';
 }
 
-function renderChips(){
-  if(!ov)return;
+function renderKpis(){
   const c=ov.counts,n=k=>c[k]||0;
-  const run=n('running')+n('queued'),wait=n('waiting_approval')+n('waiting_info');
-  const s=ov.render_slots?`Suất render ${ov.render_slots.busy}/${ov.render_slots.total}`:'';
-  $('chips').innerHTML=[`Đang chạy ${run}`,`Chờ người ${wait}`,`Bị dừng ${n('blocked')}`,`Xong ${n('done')}`,s,`Chi phí AI ${usd(ov.total_usd)}`].filter(Boolean).map(t=>`<span class="chip">${esc(t)}</span>`).join('');
+  const run=n('running')+n('queued'),wait=n('waiting_approval')+n('waiting_info'),s=ov.render_slots;
+  const T=[['run',run,'Đang chạy'],['wait',wait,'Chờ người'],['stop',n('blocked'),'Bị dừng'],['done',n('done'),'Xong'],
+    ['slot',s?`${s.busy}/${s.total}`:'–','Suất render'],['usd',usd(ov.total_usd),'Chi phí AI']];
+  setHTML($('chips'),T.map(([k,v,l])=>`<div class="kpi k-${k}${v===0?' zero':''}"><b>${esc(v)}</b><span>${l}</span></div>`).join(''));
+  document.title=(wait?`(${wait}) `:'')+'vidagents - theo dõi';
 }
+
+function emptyCard(msg){return `<div class="card empty"><img src="${EMBLEM}" alt="">${msg}</div>`;}
+
+function renderList(){
+  const L=$('list');
+  if(!ov||!ov.jobs.length){sel=null;setHTML(L,emptyCard('Chưa có job.'));return;}
+  const jobs=[...ov.jobs].sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||''));
+  if(!sel||!jobs.find(j=>j.job_id===sel))sel=jobs[0].job_id;
+  setHTML(L,jobs.map(j=>`<button type="button" class="job${j.job_id===sel?' sel':''}" data-id="${esc(j.job_id)}" aria-current="${j.job_id===sel}">
+    <span class="row"><span class="jid">${esc(j.job_id)}</span><span class="bd s-${esc(j.status)}">${esc(ST[j.status]||j.status)}</span></span>
+    <span class="mut" style="display:block">${esc(j.brand)} &middot; ${esc(j.video_type)}</span>
+    <span class="row mut"><span>${j.stalled?'<span class="stall">Có thể đang đứng</span>':esc(j.requester)}</span><span class="num">${usd(j.usd)}</span></span>
+    <span class="bar" data-s="${esc(j.status)}" style="display:block"><i style="width:${j.progress}%"></i></span></button>`).join(''));
+}
+$('list').addEventListener('click',e=>{
+  const b=e.target.closest('.job');if(!b)return;
+  sel=b.dataset.id;renderList();loadDetail();
+  if(window.matchMedia('(max-width:1000px)').matches)$('detail').scrollIntoView({behavior:'smooth',block:'start'});
+});
 
 function renderDetail(j){
   const D=$('detail');
-  const a=j.agents.map(x=>`<div class="ag ${x.state==='active'?'active':''}"><div class="row"><b>${esc(x.name)}</b><span class="bd s-${x.state}">${AG[x.state]}</span></div>
-    <div class="mut" style="min-height:20px">${esc(x.last||'Chưa làm gì')}${x.last_at?' &middot; '+hm(x.last_at):''}</div>
-    <div class="mut">${x.steps} bước &middot; ${x.calls} lượt AI &middot; ${usd(x.usd)}</div></div>`).join('');
-  const m=j.milestones.map(x=>`<div class="ms s-${x.state}">${esc(x.label)}<small>${esc(HUMAN[x.agent]||x.agent)} &middot; ${MS[x.state]}</small></div>`).join('');
-  const c=j.critic,fs=c.findings.length?c.findings.map(f=>`<div class="f"><span class="bd s-${f.severity==='nang'?'blocked':'waiting'}">${f.severity==='nang'?'Nặng':'Vừa'}</span> ${f.at!=null?'giây '+esc(f.at)+': ':''}${esc(f.desc)}</div>`).join(''):'<div class="mut">Chưa có phát hiện nào.</div>';
-  const r=j.rounds,k=j.cost;
-  const steps=[...j.steps].reverse().map(s=>`<div class="lg">${hm(s.at)}  <b>${esc(s.label)}</b> (${esc(HUMAN[s.agent]||s.agent)})${s.status!=='ok'?' - '+esc(s.status):''}</div>`).join('')||'<div class="mut">Chưa có bước nào.</div>';
-  const outs=Object.entries(j.outputs||{}).map(([k2,v])=>`<div class="lg">${esc(k2)}: ${esc(v)}</div>`).join('');
-  D.innerHTML=`<div class="card" style="margin-bottom:14px"><div class="row"><div><b style="font-size:16px">${esc(j.job_id)}</b>
-      <div class="mut">${esc(j.brand)} &middot; ${esc(j.video_type)} &middot; ${esc(j.requester)}${j.mode?' &middot; chế độ '+esc(j.mode):''}</div></div>
-      <span class="bd s-${esc(j.status)}">${esc(ST[j.status]||j.status)}</span></div>
-      <div class="bar"><i style="width:${j.progress}%"></i></div><div class="mut" style="margin-top:4px">${j.progress}% &middot; cập nhật ${hm(j.updated_at)}</div></div>
-    ${bannerFor(j)}${j.checkpoint_error?`<div class="banner bad">Không đọc được checkpoint (${esc(j.checkpoint_error)}). Đang hiển thị theo sổ job.</div>`:''}
-    <h3>Tiến trình</h3><div class="flow">${m}</div>
-    <h3>Các agent</h3><div class="agents">${a}</div>
-    <div class="two"><div class="card"><h3>Critic${c.stage?' ('+esc(c.stage)+')':''}: ${c.heavy} nặng, ${c.mid} vừa</h3>${fs}
-        <h3 style="margin-top:12px">Vòng sửa</h3><div class="mut">Critic ${r.critic_fix}/${r.critic_max} &middot; Người duyệt ${r.human}/${r.human_max} &middot; Hỏi thêm ${r.info}/${r.info_max}</div></div>
-      <div class="card"><h3>Chi phí AI</h3><div style="font-size:22px;font-weight:600">${usd(k.usd)}${k.cap?` <span class="mut">/ ${usd(k.cap)}</span>`:''}</div>
-        <div class="mut">${k.calls} lượt gọi &middot; ${k.input_tokens.toLocaleString('vi-VN')} token vào &middot; ${k.output_tokens.toLocaleString('vi-VN')} ra</div>
-        ${k.unpriced_models.length?`<div class="mut">Chưa có giá cho: ${esc(k.unpriced_models.join(', '))}</div>`:''}${outs?'<h3 style="margin-top:12px">Kết quả</h3>'+outs:''}</div></div>
-    <div class="card"><h3>Nhật ký các bước (mới nhất trước)</h3>${steps}</div>`;
+  const total=j.milestones.length,done=j.milestones.filter(m=>m.state==='done').length;
+  const agents=j.agents.map(x=>`<div class="ag ${esc(x.state)}"><div class="row"><div class="agh"><span class="av" aria-hidden="true">${esc(AV[x.id]||x.name[0])}</span><b>${esc(x.name)}</b></div><span class="bd s-${esc(x.state)}">${esc(AG[x.state]||x.state)}</span></div>
+    <div class="aglast">${esc(x.last||'Chưa làm gì')}${x.last_at?` <span class="mut">&middot; ${hm(x.last_at)}</span>`:''}</div>
+    <div class="agm"><span>${x.steps} bước</span><span>${x.calls} lượt AI</span><span>${usd(x.usd)}</span></div></div>`).join('');
+  const c=j.critic,r=j.rounds,k=j.cost;
+  const fs=c.findings.length?c.findings.map(f=>`<li><span class="bd s-${f.severity==='nang'?'blocked':'waiting'}">${f.severity==='nang'?'Nặng':'Vừa'}</span><span>${f.at!=null?`<b class="num">giây ${esc(f.at)}</b> `:''}${esc(f.desc)}</span></li>`).join(''):'<li class="mut">Chưa có phát hiện nào.</li>';
+  const pct=k.cap?Math.min(100,k.usd/k.cap*100):0,lvl=k.cap&&k.usd>=k.cap?' bad':(k.cap&&k.usd>=.8*k.cap?' warn':'');
+  const steps=[...j.steps].reverse().map(s=>`<li><time>${hm(s.at)}</time><span><b>${esc(s.label)}</b> <span class="mut">${esc(HUMAN[s.agent]||s.agent)}</span>${s.status!=='ok'?` <span class="bd s-waiting">${esc(s.status)}</span>`:''}</span></li>`).join('')||'<li class="mut">Chưa có bước nào.</li>';
+  const outs=Object.entries(j.outputs||{}).map(([k2,v])=>`<div class="out">${esc(k2)}: ${esc(v)}</div>`).join('');
+  const html=`<div class="card hero"><div class="row" style="align-items:flex-start"><div style="min-width:0"><h2 class="jt">${esc(j.job_id)}</h2>
+      <div class="tags"><span class="tag">${esc(j.brand)}</span><span class="tag">${esc(j.video_type)}</span><span class="tag">${esc(j.requester)}</span>${j.mode?`<span class="tag">Chế độ ${esc(j.mode)}</span>`:''}</div></div>
+      <span class="bd lg s-${esc(j.status)}">${esc(ST[j.status]||j.status)}</span></div>
+      <div class="bar big" data-s="${esc(j.status)}"><i style="width:${j.progress}%"></i></div>
+      <div class="row mut"><span class="num">${done}/${total} mốc &middot; ${j.progress}%</span><span>Cập nhật ${hm(j.updated_at)}</span></div></div>
+    ${bannerFor(j)}${j.checkpoint_error?`<div class="banner bad" role="alert">${ico('warn')}<div>Không đọc được checkpoint (${esc(j.checkpoint_error)}). Đang hiển thị theo sổ job.</div></div>`:''}
+    <div class="stage"><div id="ltSlot"></div><div><h3 class="sec">Các agent</h3><div class="agents">${agents}</div></div></div>
+    <div class="two"><div class="card"><h3>Critic${c.stage?' ('+esc(c.stage)+')':''}</h3>
+        <div class="pills"><span class="bd s-${c.heavy?'blocked':'idle'}">${c.heavy} nặng</span><span class="bd s-${c.mid?'waiting':'idle'}">${c.mid} vừa</span></div>
+        <ul class="fl">${fs}</ul>
+        <dl class="kv"><div><dt>Critic tự sửa</dt><dd>${r.critic_fix}/${r.critic_max}</dd></div><div><dt>Người duyệt</dt><dd>${r.human}/${r.human_max}</dd></div><div><dt>Hỏi thêm</dt><dd>${r.info}/${r.info_max}</dd></div></dl></div>
+      <div class="card"><h3>Chi phí AI</h3><div class="big-n">${usd(k.usd)}${k.cap?` <span class="mut" style="font-size:14px;font-weight:500">/ ${usd(k.cap)}</span>`:''}</div>
+        ${k.cap?`<div class="meter${lvl}"><i style="width:${pct}%"></i></div>`:'<div style="height:10px"></div>'}
+        <div class="mut num">${k.calls} lượt gọi &middot; ${k.input_tokens.toLocaleString('vi-VN')} token vào &middot; ${k.output_tokens.toLocaleString('vi-VN')} ra</div>
+        ${k.unpriced_models.length?`<div class="mut">Chưa có giá cho: ${esc(k.unpriced_models.join(', '))}</div>`:''}${outs?'<h3 style="margin:14px 0 4px">Kết quả</h3>'+outs:''}</div></div>
+    <div class="card"><h3>Nhật ký các bước (mới nhất trước)</h3><ol class="tl">${steps}</ol></div>`;
+  if(setHTML(D,html))lanternMount(j.milestones);
+}
+
+/* ---- Logo Trần Gia treo trên dây (tiến trình) ----
+   Phần tử được giữ nguyên giữa các lần vẽ lại chi tiết job; vị trí và độ đung đưa nằm trong biến JS nên chuyển động liền mạch. Không dùng thư viện. */
+const LT={el:null,ol:null,lan:null,halo:null,cnt:null,rows:[],cy:[],rh:40,idx:null,sig:'',y:0,vy:0,ang:0,av:0,ty:0,ready:false,last:0};
+const REDUCE=window.matchMedia('(prefers-reduced-motion: reduce)');
+function lanternBuild(){
+  const d=document.createElement('section');d.className='lt';d.setAttribute('aria-label','Tiến trình job');
+  d.innerHTML=`<div class="lt-head"><h3>Tiến trình</h3><span class="lt-n"></span></div><div class="lt-rope" aria-hidden="true"></div><ol></ol>
+  <div class="lantern" aria-hidden="true"><svg viewBox="0 0 60 56" width="60" height="56">
+    <defs><radialGradient id="ltHalo"><stop offset="0" style="stop-color:rgb(var(--glow));stop-opacity:.55"/><stop offset="1" style="stop-color:rgb(var(--glow));stop-opacity:0"/></radialGradient></defs>
+    <circle class="halo" cx="30" cy="33" r="40" fill="url(#ltHalo)"/>
+    <circle cx="30" cy="4" r="3" fill="none" stroke="#9a8250" stroke-width="1.6"/><path d="M30 7V19" stroke="#9a8250" stroke-width="1.6"/>
+    <image href="${EMBLEM}" x="0" y="15" width="60" height="37.3"/>
+  </svg></div>`;
+  LT.el=d;LT.ol=d.querySelector('ol');LT.lan=d.querySelector('.lantern');LT.halo=d.querySelector('.halo');LT.cnt=d.querySelector('.lt-n');
+  if(window.ResizeObserver)new ResizeObserver(lanternMeasure).observe(d);
+  requestAnimationFrame(lanternFrame);
+}
+function lanternMeasure(){
+  if(!LT.el||!LT.el.isConnected||!LT.rows.length)return;
+  LT.cy=LT.rows.map(r=>r.offsetTop+r.offsetHeight/2);
+  LT.rh=LT.rows[0].offsetHeight||40;
+  if(LT.idx!=null){LT.ty=LT.cy[LT.idx];if(!LT.ready){LT.y=LT.ty;LT.ready=true;}}
+}
+function lanternMount(ms){
+  const slot=$('ltSlot');if(!slot||!ms||!ms.length)return;
+  if(!LT.el)lanternBuild();
+  slot.replaceWith(LT.el);
+  const sig=ms.map(m=>m.key+':'+m.state).join('|');
+  if(sig!==LT.sig){
+    LT.sig=sig;
+    LT.ol.innerHTML=ms.map(m=>`<li class="${esc(m.state)}"${m.state==='active'||m.state==='waiting'?' aria-current="step"':''}><span class="dot"></span><span class="nm">${esc(m.label)}<small>${esc(HUMAN[m.agent]||m.agent)} &middot; ${esc(MS[m.state]||m.state)}</small></span></li>`).join('');
+    LT.rows=[...LT.ol.children];
+  }
+  LT.cnt.textContent=ms.filter(m=>m.state==='done').length+'/'+ms.length;
+  const i=ms.findIndex(m=>m.state!=='done'),idx=i<0?ms.length-1:i;  // đứng ở mốc đầu tiên chưa xong; xong hết thì ở mốc cuối
+  const old=LT.idx;LT.idx=idx;LT.el.dataset.s=ms[idx].state;
+  lanternMeasure();
+  if(old!=null&&old!==idx&&LT.ready&&!REDUCE.matches)LT.av+=(idx>old?1:-1)*Math.min(2.2,.9+Math.abs(LT.ty-LT.y)/260);  // hất cho đung đưa khi đổi mốc
+  lanternPaint(performance.now()/1000);
+}
+function lanternPaint(t){
+  const calm=REDUCE.matches;
+  const fl=calm?1:.93+.05*Math.sin(t*11)+.03*Math.sin(t*17.3+2)+.02*Math.sin(t*5.1);
+  const a=Math.max(-.5,Math.min(.5,LT.ang))+(calm?0:.03*Math.sin(t*1.3));
+  LT.lan.style.transform=`translateY(${(LT.y-33).toFixed(1)}px) rotate(${a.toFixed(3)}rad)`;
+  LT.halo.style.opacity=fl.toFixed(3);
+  LT.el.style.setProperty('--ly',LT.y.toFixed(1)+'px');
+  for(let k=0;k<LT.rows.length;k++){
+    const d=((LT.cy[k]??0)-LT.y)/LT.rh;
+    LT.rows[k].style.setProperty('--lit',Math.min(1,Math.exp(-d*d/2.2)*fl).toFixed(3));  // sáng giảm dần theo khoảng cách tới logo
+  }
+}
+function lanternFrame(now){
+  requestAnimationFrame(lanternFrame);
+  if(!LT.el||!LT.el.isConnected||!LT.rows.length||LT.idx==null){LT.last=0;return;}
+  const t=now/1000,dt=LT.last?Math.min(.05,t-LT.last):.016;LT.last=t;
+  if(REDUCE.matches){LT.y=LT.ty;LT.vy=0;LT.ang=0;LT.av=0;}
+  else{
+    LT.vy+=(70*(LT.ty-LT.y)-10*LT.vy)*dt;LT.y+=LT.vy*dt;      // trượt xuống dây, hơi vọt qua rồi về
+    LT.av+=(-25*LT.ang-1.3*LT.av)*dt;LT.ang+=LT.av*dt;         // con lắc nhẹ, tắt dần sau vài nhịp
+  }
+  lanternPaint(t);
 }
 
 async function loadDetail(){
-  if(!sel)return;
-  try{renderDetail(await get('/api/jobs/'+encodeURIComponent(sel)));}catch(e){$('detail').innerHTML='<div class="card empty">Không tải được job này.</div>';}
+  const D=$('detail');
+  if(!sel){setHTML(D,emptyCard('Chưa có job nào. Giao job qua Telegram (<code>/video</code>) rồi quay lại đây.'));return;}
+  try{renderDetail(await get('/api/jobs/'+encodeURIComponent(sel)));}
+  catch(e){setHTML(D,emptyCard('Không tải được job này.'));}
 }
 async function tick(){
-  try{ov=await get('/api/overview');renderChips();renderList();await loadDetail();}
-  catch(e){$('chips').innerHTML='<span class="chip">Mất kết nối với máy chủ dashboard</span>';}
+  try{ov=await get('/api/overview');}catch(e){setLive(false);return;}
+  setLive(true);renderKpis();renderList();await loadDetail();
 }
+const fav=document.querySelector('link[rel=icon]');if(fav)fav.href=EMBLEM;
 tick();setInterval(tick,2000);
 </script>
 </body>

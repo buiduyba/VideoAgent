@@ -30,6 +30,7 @@ class JobState(TypedDict, total=False):
     # brief + hỏi thêm thông tin
     brief_text: str
     brief: dict
+    brief_prefill: dict  # brief đã đọc từ phiếu điền sẵn (khỏi gọi AI trích); chỉ dùng cho lần trích đầu tiên
     info_request: list
     after_info: str
     info_rounds: int
@@ -43,6 +44,7 @@ class JobState(TypedDict, total=False):
     critic_stage: str  # "preview" | "final"
     critic_fix_rounds: int
     critic_has_heavy: bool
+    hand_edited: bool  # bản cuối do người chỉnh tay trong VideoFac (critic bỏ lớp 1 của skill, không có vòng AI tự sửa)
     critic_findings: list
     fix_source: str  # "critic" | "human"
     escalation: Optional[dict]

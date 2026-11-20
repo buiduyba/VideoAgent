@@ -168,7 +168,8 @@ def deliver_results(source_dir: Path, work_dir: Path, job_id: str, outputs: dict
     """Chép kết quả về `<footage gốc>\\edit\\<mã job>\\`. Thành công mới đánh dấu .delivered (cho phép dọn)."""
     dest = Path(source_dir) / "edit" / job_id
     dest.mkdir(parents=True, exist_ok=True)
-    wanted = [Path(v) for v in outputs.values() if isinstance(v, str)]
+    # gói chỉnh tay (videofac_*) đã nằm sẵn trên NAS và chỉ là file phục vụ người chỉnh: không chép lại thành "kết quả"
+    wanted = [Path(v) for k, v in outputs.items() if isinstance(v, str) and not k.startswith("videofac_")]
     wanted += [Path(work_dir) / "edit" / n for n in RESULT_DOCS]
     for p in wanted:
         if p.is_file():
