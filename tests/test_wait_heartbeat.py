@@ -50,14 +50,16 @@ def test_tick_fires_periodically_only_while_waiting(tmp_path):
     th.start()
     assert held.wait(5)
     tw.start()
-    time.sleep(0.4)
-    waiting_ticks = len(ticks)
+    t0 = time.time()
+    assert wait_until(lambda: len(ticks) >= 3, 10.0)               # đợi đủ 3 nhịp thay vì ngủ một khoảng cố định (máy bận thì khoảng ngủ bị kéo dài, số nhịp lệch)
+    waiting_ticks, elapsed = len(ticks), time.time() - t0
     release.set()
     assert got.wait(5)
     th.join(), tw.join()
-    assert 3 <= waiting_ticks <= 9 and set(ticks) == {"chờ"}        # khoảng 0,4 s / 0,05 s
+    assert set(ticks) == {"chờ"} and waiting_ticks <= elapsed / 0.05 + 2     # không nhiều hơn một nhịp mỗi 0,05 giây
+    after = len(ticks)
     time.sleep(0.2)
-    assert len(ticks) <= waiting_ticks + 1                          # có suất rồi thì hết nhịp (cho phép một nhịp sát lúc lấy được suất)
+    assert len(ticks) == after                                     # có suất rồi thì không còn nhịp nào nữa
 
 
 def test_a_failing_tick_never_breaks_the_wait(tmp_path):

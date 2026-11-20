@@ -6,6 +6,7 @@ Quy ước quan trọng (LangGraph chạy lại node từ đầu khi tiếp tụ
 """
 from __future__ import annotations
 
+import contextlib
 import functools
 import json
 import re
@@ -340,8 +341,17 @@ def make_nodes(d: Deps) -> dict[str, Callable[[dict], dict]]:
                                         + wrap_data("kiem_ke", json.dumps(files, ensure_ascii=False))
                                         + wrap_data("brief", state.get("brief_text", "")))
             mode, reason = adv.mode, adv.reason
-        res = d.tools.run("footage", "prep", mode, vars_for(state, "footage"), cwd=ed, approvals=state.get("approvals", {}),
-                          owner=state["job_id"], on_wait=on_wait_for(state))
+        src = Path(state["source_dir"]) if state.get("source_dir") else None
+        with contextlib.ExitStack() as guard:
+            if src:   # nhiều người giao cùng một footage: chỉ một job gọi Scribe, các job còn lại chờ rồi dùng lại bản đó
+                hook, tick = getattr(d.tools, "heavy_hook", None), getattr(d.tools, "wait_tick", None)
+                with (hook(state["job_id"]) if hook else contextlib.nullcontext()):   # chờ khóa mà KHÔNG giữ chỗ chạy việc nhẹ
+                    guard.enter_context(W.footage_lock(cfg, src, state["job_id"], on_tick=(lambda: tick(state["job_id"])) if tick else None))
+                W.seed_transcripts(src, Path(state["footage_dir"]), [p for p in Path(state["footage_dir"]).iterdir() if p.is_file()])   # lấy bản job trước vừa làm
+            res = d.tools.run("footage", "prep", mode, vars_for(state, "footage"), cwd=ed, approvals=state.get("approvals", {}),
+                              owner=state["job_id"], on_wait=on_wait_for(state))
+            if src:   # đẩy lên NAS NGAY (không đợi tới lúc giao kết quả) để job cùng footage đang chờ khóa dùng được liền
+                W.return_transcripts(src, Path(state["footage_dir"]))
         texts = "\n\n".join(f"## {Path(r).name}\n{_read(Path(r), 12000)}" for r in res.reports)
         rep = d.llm.structured(
             agent="footage", system=sysmsg, schema=S.FootageReport,

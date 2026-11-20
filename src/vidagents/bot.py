@@ -147,6 +147,21 @@ def ui_status(status: str) -> str:
     return _STATUS_VN.get(status, status)
 
 
+_STATUS_VI = {"queued": "đang xếp hàng", "running": "đang chạy", "waiting_info": "chờ thông tin", "waiting_approval": "chờ duyệt", "blocked": "bị dừng"}
+
+
+def same_footage_note(rows: Sequence[dict]) -> str:
+    """Cảnh báo kèm tin "Đã nhận" khi thư mục footage đang có job khác. Không chặn: cùng footage vẫn có thể là video khác (thương hiệu, dạng khác)."""
+    if not rows:
+        return ""
+    lines = [f"· {j['job_id']} ({j.get('requester_name') or 'người khác'}, {j.get('video_type', '')}/{j.get('brand', '')}, "
+             f"{_STATUS_VI.get(j.get('status', ''), j.get('status', ''))})" for j in rows[:5]]
+    more = f"\n… và {len(rows) - 5} job nữa" if len(rows) > 5 else ""
+    return ("\n\n⚠ Thư mục footage này đang có job khác:\n" + "\n".join(lines) + more +
+            "\nJob mới vẫn được nhận (có thể là video khác). Mỗi job chép riêng footage về máy chung; bản nhận dạng lời được dùng chung: "
+            "job đến sau chờ job trước nhận dạng xong rồi dùng lại, không tính tiền Scribe lần hai. Giao trùng nhầm thì /huy job mới.")
+
+
 def unknown_command_text(text: str) -> str:
     cmd = (text or "").split(None, 1)[0] if (text or "").strip() else "?"
     return (f"Bot không có lệnh {cmd}.\nGõ /start để xem các lệnh, /ping để kiểm tra bot còn chạy, "
@@ -292,6 +307,13 @@ def run_bot(cfg: Config, runner, deps, notifier: TelegramNotifier) -> None:
     from . import typewiz, ui, wizard
     from .chat import ChatAssistant
 
+    def dup_note(jid: str) -> str:
+        """Cảnh báo trùng footage (rỗng nếu không trùng). Lỗi đọc sổ không được làm mất tin "Đã nhận"."""
+        try:
+            return same_footage_note(deps.jobs.same_footage(jid))
+        except Exception:  # noqa: BLE001
+            return ""
+
     assistant = ChatAssistant(cfg, deps)
     markup = notifier.markup
 
@@ -346,7 +368,7 @@ def run_bot(cfg: Config, runner, deps, notifier: TelegramNotifier) -> None:
             return
         name = update.effective_user.full_name or uid
         jid = runner.start(requester_id=uid, requester_name=name, **plan["start"])
-        await update.message.reply_text(f"Đã nhận, mã job: {jid}")
+        await update.message.reply_text(f"Đã nhận, mã job: {jid}" + dup_note(jid))
 
     async def act(uid: str, job_id: str, action: str, note: str = "", mode: str | None = None, arg: str = "") -> tuple[str, bool]:
         """Làm một việc với job. Dùng chung cho lệnh gõ và nút bấm (một nơi kiểm quyền + trạng thái).
@@ -580,7 +602,7 @@ def run_bot(cfg: Config, runner, deps, notifier: TelegramNotifier) -> None:
         if r.start:
             ctx.user_data.pop("wz", None)
             jid = runner.start(requester_id=uid, requester_name=q.from_user.full_name or uid, **r.start)
-            await reply_with(q, f"✅ Đã nhận, mã job: {jid}\nBot sẽ nhắn khi cần bạn duyệt hoặc trả lời. Bấm nút bên dưới để xem tiến độ bất cứ lúc nào.",
+            await reply_with(q, f"✅ Đã nhận, mã job: {jid}\nBot sẽ nhắn khi cần bạn duyệt hoặc trả lời. Bấm nút bên dưới để xem tiến độ bất cứ lúc nào." + dup_note(jid),
                              ui.jobs_keyboard([deps.jobs.get(jid)]), edit=True)
             return
         if r.end:
@@ -722,7 +744,7 @@ def run_bot(cfg: Config, runner, deps, notifier: TelegramNotifier) -> None:
                 if r.start:
                     ctx.user_data.pop("wz", None)
                     jid = runner.start(requester_id=uid, requester_name=update.effective_user.full_name or uid, **r.start)
-                    await update.message.reply_text(f"✅ Đã nhận, mã job: {jid}", reply_markup=markup(ui.jobs_keyboard([deps.jobs.get(jid)])))
+                    await update.message.reply_text(f"✅ Đã nhận, mã job: {jid}" + dup_note(jid), reply_markup=markup(ui.jobs_keyboard([deps.jobs.get(jid)])))
                     return
                 if r.panel and ctx.user_data.get("wz_msg"):   # bảng phiếu: sửa tại chỗ tin bảng thay vì gửi tin mới (đỡ đầy khung chat)
                     cid, mid = ctx.user_data["wz_msg"]

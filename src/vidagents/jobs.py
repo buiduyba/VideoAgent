@@ -1,6 +1,7 @@
 """Sổ job (SQLite): ai giao, trạng thái gì. Trạng thái chi tiết từng bước nằm ở checkpointer của LangGraph."""
 from __future__ import annotations
 
+import os
 import sqlite3
 from contextlib import closing
 from datetime import datetime
@@ -94,6 +95,19 @@ class JobStore:
         with closing(self._c()) as c:
             r = c.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
         return dict(r) if r else None
+
+    @staticmethod
+    def _footage_key(p: str | None) -> str:
+        return os.path.normcase(os.path.normpath(p or "")) if p else ""
+
+    def same_footage(self, job_id: str) -> list[dict]:
+        """Các job KHÁC đang chạy/chờ trên cùng thư mục footage với job này (so đường dẫn đã chuẩn hóa: hoa thường, dấu gạch).
+        Dùng để cảnh báo người giao; không chặn gì vì cùng footage vẫn có thể là video khác (khác thương hiệu, khác dạng)."""
+        me = self.get(job_id)
+        key = self._footage_key(me and me.get("footage_dir"))
+        if not key:
+            return []
+        return [j for j in self.list(None, active_only=True) if j["job_id"] != job_id and self._footage_key(j.get("footage_dir")) == key]
 
     def stalled(self, minutes: float, now: datetime | None = None) -> list[dict]:
         """Job đang chạy/xếp hàng mà không có cập nhật nào quá `minutes` phút và CHƯA được báo cho mốc cập nhật này.
