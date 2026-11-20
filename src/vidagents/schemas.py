@@ -5,6 +5,7 @@ Skill được đổi cách làm bên trong, nhưng đầu ra PHẢI đúng các
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Literal
 
@@ -163,6 +164,8 @@ def validate_edl_b(edl: dict) -> list[str]:
         ns.add(str(r.get("n")))
         if r.get("source") not in sources:
             errs.append(f"ranges[{i}].source '{r.get('source')}' không có trong sources")
+        elif "/project-assets/ai/" in str(sources.get(r.get("source"))).replace("\\", "/"):
+            errs.append(f"ranges[{i}].source là video AI trám (không có lời để cắt): chỉ dùng làm covers/broll, đoạn lời phải lấy từ clip quay")
         s, e = r.get("start"), r.get("end")
         if not (_num(s) and _num(e)) or e <= s:
             errs.append(f"ranges[{i}] start/end sai")
@@ -172,7 +175,136 @@ def validate_edl_b(edl: dict) -> list[str]:
                 errs.append(f"{key}[{i}].source không có trong sources")
             elif key == "covers" and str(x.get("range")) not in ns:
                 errs.append(f"covers[{i}].range '{x.get('range')}' không khớp đoạn nào")
+    # khoảng thẻ (gaps): skill luôn cắt một hình nền dưới thẻ, nên cần source (KHÓA trong sources) + start (giây) + seconds
+    for i, g in enumerate(edl.get("gaps") or []):
+        if not isinstance(g, dict):
+            errs.append(f"gaps[{i}] không phải object")
+            continue
+        if g.get("image") is not None:   # nền thẻ là ảnh (ảnh sản phẩm): không cần source/start; file có thật kiểm ở missing_sources
+            if not isinstance(g["image"], str) or not g["image"].strip():
+                errs.append(f"gaps[{i}].image phải là đường dẫn ảnh")
+        else:
+            if g.get("source") not in sources:
+                errs.append(f"gaps[{i}].source phải là KHÓA trong sources (vd 'A'), không phải chữ mô tả")
+            if not _num(g.get("start")) or g["start"] < 0:
+                errs.append(f"gaps[{i}].start phải là số giây trong clip nguồn (hình nền dưới thẻ)")
+        if not _num(g.get("seconds")) or g["seconds"] <= 0:
+            errs.append(f"gaps[{i}].seconds phải là số giây > 0")
+        ref = g.get("after_range", g.get("before_range"))
+        if str(ref) not in ns:
+            errs.append(f"gaps[{i}] cần after_range hoặc before_range trỏ đúng một đoạn (n) trong ranges")
     return errs
+
+
+_VIDEO_EXT = (".mp4", ".mov", ".mkv", ".m4v")
+
+
+def clips_in(folder: Any) -> list[Path]:
+    """Các clip video ở cấp trên cùng của thư mục (đúng phạm vi bước prep của skill)."""
+    try:
+        return sorted(p for p in Path(folder).iterdir() if p.is_file() and p.suffix.lower() in _VIDEO_EXT)
+    except (OSError, TypeError):
+        return []
+
+
+def _match_name(value: str, pool: list[dict]) -> str | None:
+    """Tên/đường dẫn AI viết -> đường dẫn thật trong bảng tài nguyên, chỉ khi khớp ĐÚNG MỘT mục (theo tên file hoặc tên bỏ đuôi)."""
+    base = Path(value.replace("\\", "/")).name.casefold()
+    hits = [x for x in pool if x.get("ten", "").casefold() == base or Path(x.get("ten", "")).stem.casefold() == Path(base).stem]
+    if not hits:
+        hits = [x for x in pool if x.get("ten") and re.search(rf"(?<!\w){re.escape(Path(x['ten']).stem)}(?!\w)", value, re.I)]
+    return hits[0]["path"] if len(hits) == 1 else None
+
+
+def normalize_edl_b(edl: dict, folder: Any, brief: dict | None = None, assets: dict | None = None) -> list[str]:
+    """Sửa tại chỗ các lỗi MÁY MÓC hay gặp ở EDL do AI viết (không đổi nội dung kịch bản); trả danh sách ghi chú đã sửa.
+    1. sources ghi tên clip ('C7353', 'C7353.MP4', 'C7353 (chữ mô tả)') thay vì đường dẫn thật -> đổi thành đường dẫn file trong `folder`
+       (hoặc trong bảng tài nguyên project: video AI).
+    2. gaps thiếu nền (source không phải khóa, start rỗng): lấy nền tạm từ chính đoạn bên cạnh (cuối đoạn trước thẻ, hoặc đầu đoạn sau thẻ).
+       gaps[i].image ghi tên ảnh -> đường dẫn ảnh thật trong bảng tài nguyên; ảnh không có thật thì bỏ (rơi về nền từ clip).
+    3. end card thiếu nơi mua: lấy 'Nơi mua' người giao ghi trong brief (graphics.end.where), thay vì để AI viết hoặc chờ critic bắt lỗi.
+    4. end card dùng logo của project (graphics.end.logo) nếu project có logo; logo ghi sai đường dẫn thì bỏ.
+    `assets` = bảng project_assets.json (logo, anh_san_pham, video_ai)."""
+    notes: list[str] = []
+    assets = assets or {}
+    logo = assets.get("logo")
+    gr0 = edl.get("graphics")
+    if (logo and Path(logo).is_file()) or (isinstance(gr0, dict) and isinstance(gr0.get("end"), dict) and gr0["end"].get("logo")):
+        gr = edl.get("graphics")
+        if not isinstance(gr, dict):
+            gr = edl["graphics"] = {}
+        end = gr.get("end") if isinstance(gr.get("end"), dict) else {}
+        cur = str(end.get("logo") or "").strip()
+        if logo and Path(logo).is_file() and not (cur and Path(cur).is_file()):
+            gr["end"] = {**end, "logo": Path(logo).as_posix()}
+            notes.append("graphics.end.logo: lấy logo của project")
+        elif cur and not Path(cur).is_file():
+            gr["end"] = {k: v for k, v in end.items() if k != "logo"}
+            notes.append("graphics.end.logo: bỏ vì file không có thật (end card dùng logo của thương hiệu)")
+    where = ((brief or {}).get("where_to_buy") or "").strip()
+    if where:
+        gr = edl.get("graphics")
+        if not isinstance(gr, dict):
+            gr = edl["graphics"] = {}
+        end = gr.get("end") if isinstance(gr.get("end"), dict) else {}
+        if not str(end.get("where") or "").strip():
+            gr["end"] = {**end, "where": where}
+            notes.append("graphics.end.where: lấy từ ô 'Nơi mua' của brief")
+    srcs = edl.get("sources")
+    if not isinstance(srcs, dict):
+        return notes
+    clips = clips_in(folder)
+    for k, v in list(srcs.items()):
+        if not isinstance(v, str):
+            continue
+        p = Path(v)
+        if p.is_file():
+            if v != p.as_posix():
+                srcs[k] = p.as_posix()
+            continue
+        hits = [c for c in clips if re.search(rf"(?<!\w){re.escape(c.stem)}(?!\w)", v, re.I)]
+        if len(hits) == 1:
+            srcs[k] = hits[0].as_posix()
+            notes.append(f"sources['{k}']: '{v[:40]}' -> {hits[0].name}")
+        elif (ai := _match_name(v, assets.get("video_ai") or [])):
+            srcs[k] = ai
+            notes.append(f"sources['{k}']: '{v[:40]}' -> video AI {Path(ai).name}")
+    ranges = {str(r.get("n")): r for r in edl.get("ranges") or [] if isinstance(r, dict)}
+    for i, g in enumerate(edl.get("gaps") or []):
+        if isinstance(g, dict) and g.get("image") is not None:
+            img = str(g["image"]).strip()
+            if not Path(img).is_file():
+                fixed = _match_name(img, assets.get("anh_san_pham") or [])
+                if fixed:
+                    g["image"] = fixed
+                    notes.append(f"gaps[{i}].image: '{img[:40]}' -> {Path(fixed).name}")
+                else:
+                    g.pop("image")   # ảnh không có thật: bỏ, để nền lấy từ clip bên dưới
+                    notes.append(f"gaps[{i}].image: '{img[:40]}' không có thật, bỏ (nền lấy từ clip)")
+            elif img != Path(img).as_posix():
+                g["image"] = Path(img).as_posix()
+        if not isinstance(g, dict) or g.get("image") or (g.get("source") in srcs and _num(g.get("start"))):
+            continue
+        after = "after_range" in g
+        ref = ranges.get(str(g.get("after_range" if after else "before_range")))
+        if not ref or ref.get("source") not in srcs or not (_num(ref.get("start")) and _num(ref.get("end"))):
+            continue
+        secs = g["seconds"] if _num(g.get("seconds")) and g["seconds"] > 0 else 2.0
+        g["source"] = ref["source"]
+        g["start"] = round(max(0.0, ref["end"] - secs) if after else ref["start"], 2)
+        g["auto_background"] = f"nền tạm lấy từ {'cuối' if after else 'đầu'} đoạn {ref.get('n')}; đổi source/start nếu muốn cảnh khác"
+        notes.append(f"gaps[{i}]: nền tạm từ đoạn {ref.get('n')}")
+    return notes
+
+
+def missing_sources(edl: dict) -> list[str]:
+    """sources trỏ tới file không có thật (đường dẫn sai / chữ mô tả)."""
+    srcs = edl.get("sources") if isinstance(edl, dict) else None
+    out = [f"sources['{k}'] không phải file có thật: '{str(v)[:60]}'" for k, v in (srcs or {}).items() if not Path(str(v)).is_file()]
+    for i, g in enumerate((edl.get("gaps") or []) if isinstance(edl, dict) else []):
+        if isinstance(g, dict) and g.get("image") and not Path(str(g["image"])).is_file():
+            out.append(f"gaps[{i}].image không phải file có thật: '{str(g['image'])[:60]}'")
+    return out
 
 
 def validate_edl(mode: str, edl: Any) -> list[str]:
@@ -229,7 +361,7 @@ class LessonProposals(BaseModel):
 
 # ───────────────────────── tin nhắn từ người dùng vào cổng duyệt ─────────────────────────
 class Payload(BaseModel):
-    action: Literal["approve", "revise", "cancel", "continue", "answer", "select", "skip"]
+    action: Literal["approve", "revise", "cancel", "continue", "answer", "select", "skip", "handedit", "done"]
     by: str
     note: str = ""
     mode: Literal["A", "B", "C", "S"] | None = None

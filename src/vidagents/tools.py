@@ -137,7 +137,9 @@ class ToolRunner:
     def _exec(self, step: dict, cmd: list[str], cwd: Path, variables: dict) -> tuple[int, str]:
         env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
         try:
-            p = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, encoding="utf-8",
+            # stdin=DEVNULL: lệnh con không bao giờ được chờ người gõ phím (vd. npx hỏi "Ok to proceed? (y)" khi cài gói lần đầu,
+            # treo cả job vì bot chạy nền, không có ai trước màn hình). Không có stdin thì npx tự cài và đi tiếp.
+            p = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, encoding="utf-8", stdin=subprocess.DEVNULL,
                                errors="replace", timeout=int(step.get("timeout", 3600)), env=env)
         except subprocess.TimeoutExpired:
             return 124, "hết thời gian chờ"

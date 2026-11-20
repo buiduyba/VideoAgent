@@ -9,6 +9,27 @@ from pathlib import Path
 from .config import Config
 
 
+def load_env_file(path: Path) -> list[str]:
+    """Nạp khóa từ file .env (KHÓA=giá trị, dòng # là ghi chú) vào biến môi trường của tiến trình.
+    Biến đã đặt sẵn trong Windows thì giữ nguyên (biến của Windows thắng file). Trả danh sách TÊN đã nạp, không bao giờ in giá trị."""
+    import os
+    loaded = []
+    try:
+        lines = Path(path).read_text(encoding="utf-8-sig").splitlines()
+    except OSError:
+        return loaded
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k, v = k.strip(), v.strip().strip('"').strip("'")
+        if k and v and not os.environ.get(k):
+            os.environ[k] = v
+            loaded.append(k)
+    return loaded
+
+
 def _cfg(args) -> Config:
     return Config.load(args.config)
 
@@ -147,6 +168,8 @@ def cmd_demo(args) -> int:
         if Path(args.config).exists():  # lấy bảng giá, model, tên biến chứa key từ config thật
             base = Config.load(args.config)
             cfg.pricing, cfg.models, cfg.default_model, cfg.anthropic_key_env = base.pricing, base.models, base.default_model, base.anthropic_key_env
+            if getattr(args, "efforts", "config") == "config":  # "off" = mặc định của model, để so sánh chi phí
+                cfg.efforts = base.efforts
         cfg.max_cost_per_job_usd = args.max_usd
         from .llm import has_ant_profile
 
@@ -156,6 +179,10 @@ def cmd_demo(args) -> int:
                   f"Chưa gọi Claude, chưa tốn đồng nào.")
             return 2
     (work / "skill").mkdir(exist_ok=True)
+    kit = cfg.projects_root / "_brands" / "demo"  # bộ nhận diện tối thiểu cho thương hiệu giả (intake kiểm có brand.json)
+    kit.mkdir(parents=True, exist_ok=True)
+    if not (kit / "brand.json").exists():
+        (kit / "brand.json").write_text('{"name": "Demo"}', encoding="utf-8")
     deps = build_deps(cfg, llm=None if live else DemoLLM(heavy_rounds=1), tools_cls=DemoTools, interrupt=production_interrupt())
     if live:
         unpriced = sorted({cfg.model_for(a) for a in AGENTS if price_usd(deps.meter.pricing, cfg.model_for(a), 1000, 1000) is None})
@@ -217,6 +244,12 @@ def cmd_demo(args) -> int:
 
 
 def main(argv=None) -> int:
+    # Chạy nền (tác vụ tự bật) thì đầu ra bị chuyển vào file và Python trên Windows dùng bảng mã cũ (cp1252): in tiếng Việt là sập.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass  # luồng giả (test) không có reconfigure
     ap = argparse.ArgumentParser(prog="vidagents")
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name, fn, helptext in (("doctor", cmd_doctor, "kiểm tra cấu hình + lệnh skill đã khai báo"),
@@ -240,9 +273,15 @@ def main(argv=None) -> int:
     p.add_argument("--workdir", default=None)
     p.add_argument("--live", action="store_true", help="gọi Claude THẬT (tính tiền theo token; công cụ dựng vẫn giả)")
     p.add_argument("--max-usd", type=float, default=1.0, help="trần chi phí AI cho lần chạy --live (mặc định 1 USD)")
+    p.add_argument("--efforts", choices=["config", "off"], default="config",
+                   help="chỉ với --live: config = dùng mức suy nghĩ trong config.json; off = mặc định của model (để so chi phí)")
     p.add_argument("--config", default="config.json", help="chỉ dùng với --live: lấy bảng giá, model, tên biến chứa key")
     p.set_defaults(fn=cmd_demo)
     args = ap.parse_args(argv)
+    # file .env cạnh config.json (hoặc ở thư mục đang chạy) để đặt khóa mà không cần sửa biến môi trường của Windows
+    cfg_dir = Path(getattr(args, "config", "config.json")).resolve().parent
+    for env in dict.fromkeys([cfg_dir / ".env", Path.cwd() / ".env"]):
+        load_env_file(env)
     return args.fn(args)
 
 

@@ -23,7 +23,8 @@ from .config import Config
 from .locks import SlotLock
 
 STAGE_VI = {"new": "mới nhận", "intake": "nhận job", "brief": "đọc brief", "footage": "xem footage", "script": "viết kịch bản",
-            "build": "dựng", "fix": "sửa theo critic", "render": "render", "duyet_2_ok": "chuẩn bị render"}
+            "build": "dựng", "fix": "sửa theo critic", "render": "render", "duyet_2_ok": "chuẩn bị render",
+            "hand_edit": "đóng gói chỉnh tay", "hand_edit_done": "nhận bản chỉnh tay"}
 
 
 def _reachable(p: Path) -> bool:
@@ -87,8 +88,8 @@ class HttpNotifier:
     def __init__(self, token: str):
         self._url = f"https://api.telegram.org/bot{token}/sendMessage"
 
-    def send(self, user_id: str, text: str, files: Sequence[str] = ()) -> None:
-        data = json.dumps({"chat_id": int(user_id), "text": text[:3800]}).encode("utf-8")
+    def send(self, user_id: str, text: str, files: Sequence[str] = (), buttons=None) -> None:
+        data = json.dumps({"chat_id": int(user_id), "text": text[:3800]}).encode("utf-8")   # (nút bấm chỉ có ở bot chính)
         req = urllib.request.Request(self._url, data=data, headers={"Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(req, timeout=30) as r:

@@ -148,3 +148,54 @@ def test_work_keep_hours_is_configurable(tmp_path):
     e = make_env(tmp_path, work_keep_hours=2)
     _mk_job(e, "j-a", "done", 3, marker=True)
     assert W.cleanup_work(e.cfg, e.deps.jobs) == ["j-a"]
+
+
+# ───── tích hợp skill (19/11/2026) ─────
+def test_transcripts_from_source_are_reused_without_touching_nas(tmp_path):
+    e = make_env(tmp_path)
+    tdir = e.clip / "edit" / "transcripts"
+    tdir.mkdir(parents=True)
+    (tdir / "clip.json").write_text('{"words": []}', encoding="utf-8")
+    (tdir / "khac.json").write_text("{}", encoding="utf-8")  # clip không còn trong thư mục: không chép
+    _, r = intake(e, "20261106-demo-09")
+    got = Path(r["work_dir"]) / "edit" / "transcripts"
+    assert sorted(p.name for p in got.iterdir()) == ["clip.json"]
+    assert any("Dùng lại 1 bản nhận dạng lời" in m[1] for m in e.notifier.messages)
+    assert sorted(p.name for p in tdir.iterdir()) == ["clip.json", "khac.json"]  # nguồn giữ nguyên
+
+
+def test_new_transcripts_return_to_source_without_overwrite(tmp_path):
+    e = make_env(tmp_path)
+    work = tmp_path / "w"
+    (work / "edit" / "transcripts").mkdir(parents=True)
+    (work / "edit" / "transcripts" / "moi.json").write_text("moi", encoding="utf-8")
+    (work / "edit" / "transcripts" / "cu.json").write_text("ban-trong-job", encoding="utf-8")
+    src_t = e.clip / "edit" / "transcripts"
+    src_t.mkdir(parents=True)
+    (src_t / "cu.json").write_text("ban-tren-nas", encoding="utf-8")
+    W.deliver_results(e.clip, work, "j-tr", {})
+    assert (src_t / "moi.json").read_text(encoding="utf-8") == "moi"
+    assert (src_t / "cu.json").read_text(encoding="utf-8") == "ban-tren-nas"
+
+
+def test_empty_top_level_points_to_subfolders_with_media(tmp_path):
+    e = make_env(tmp_path)
+    (e.clip / "clip.mp4").unlink()
+    (e.clip / "Source Video").mkdir()
+    (e.clip / "Source Video" / "a.MP4").write_bytes(b"v")
+    (e.clip / "Ảnh png").mkdir()
+    for i in range(3):
+        (e.clip / "Ảnh png" / f"{i}.png").write_bytes(b"i")
+    (e.clip / "trong").mkdir()
+    _, r = intake(e, "20261106-demo-10")
+    assert r["status"] == "cancelled"
+    assert "Source Video (1 video)" in r["cancel_reason"] and "Ảnh png (3 ảnh)" in r["cancel_reason"]
+    assert "trong" not in r["cancel_reason"].split("thư mục con:")[1]
+
+
+def test_build_and_render_pass_project_dir():
+    import json
+    t = json.loads((Path(__file__).resolve().parents[1] / "agents" / "edit" / "tools.json").read_text(encoding="utf-8"))
+    for act in ("build", "render"):
+        cmd = t["actions"][act]["B"][0]["cmd"]
+        assert cmd[cmd.index("--project") + 1] == "{project_dir}"

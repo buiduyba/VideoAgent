@@ -281,8 +281,9 @@ def test_spec_is_closed_and_fully_reachable():
     plain, cond = build_spec(_cfg())
     from vidagents.nodes import make_nodes  # noqa: F401
 
-    nodes = {"intake", "extract_brief", "ask_info", "footage", "script", "approve_1", "edit_build", "edit_fix", "critic",
-             "approve_2", "escalate", "render", "deliver", "lessons", "lesson_gate", "cancel_end"}
+    nodes = {"intake", "extract_brief", "ask_info", "scribe_gate", "footage", "script", "approve_1", "edit_build", "edit_fix", "critic",
+             "approve_2", "hand_edit", "hand_edit_wait", "hand_edit_done", "hand_edit_review", "escalate", "render", "deliver", "lessons", "lesson_gate",
+             "cancel_end"}
     assert set(plain) | set(cond) == nodes  # mọi node có cạnh đi ra
     seen, todo = set(), [ENTRY]
     while todo:
@@ -312,4 +313,4 @@ def test_five_agents_have_skill_and_tools_manifest():
 def test_doctor_reports_declared_commands():
     text = "\n".join(doctor(_cfg()))
     assert "footage.prep" in text and "✔" in text and "✘" in text
-    assert "đang là bản tạm" in text
+    assert "đang là bản tạm" not in text  # từ 19/11 SKILL.md của agent sinh từ skill thật (tools/sync_vidagents.py)

@@ -64,10 +64,11 @@ Khóa (key, token) chỉ đặt qua biến môi trường, không ghi vào file 
 
 ## Lệnh Telegram
 `/video "<thư mục footage>" <loại> <thương hiệu>` + brief ở các dòng sau · `/duyet <job>` · `/sua <job> <góp ý> [chedo=A|B|C|S]` ·
-`/bosung <job> <nội dung>` · `/chapnhan <job>` · `/baihoc <job> 1,3 | ghim 1 | bo` · `/huy <job>` · `/trangthai` (kèm chi phí AI) · `/nangtran <job> <USD>` · `/tieptuc <job>` · `/loai`.
+`/bosung <job> <nội dung>` · `/chapnhan <job>` · `/baihoc <job> 1,3 | ghim 1 | bo` · `/huy <job>` · `/trangthai` (kèm chi phí AI) · `/nangtran <job> <USD>` · `/tieptuc <job>` · `/loai`. Quản trị viên: `/themnguoi` · `/xoanguoi` · `/danhsach` · `/themloai` (thêm dạng video mới bằng nút bấm).
 Mỗi người nhắn riêng cho bot một lần (`/start`) để bot gửi được tin riêng.
 
 ## Thả skill vào
+**Từ 19/11/2026:** `agents/<tên>/SKILL.md` được **sinh tự động** từ skill dựng video (repo `skill-edit-video-hoi-cho`, máy này ở `D:\skill-edit-video-hoi-cho`) bằng `py tools\sync_vidagents.py --agents <thư mục agents này>`: mỗi file = `ROLE.md` của agent (vai trò trong khung, sửa ở đây) + các mục trích từ SKILL.md của skill mà agent cần (4,5–12 nghìn ký tự thay vì ~55 nghìn). Đừng sửa tay `SKILL.md`; `--check` báo lệch. Cách cũ dưới đây vẫn đúng cho skill khác.
 1. Chép nội dung skill vào `agents/<tên>/SKILL.md` (xóa dòng `<!-- PLACEHOLDER -->`).
 2. Khai báo lệnh trong `agents/<tên>/tools.json` cho từng chế độ (xem mẫu chế độ B). Đặt `heavy: true` cho bước cắt/render để xếp hàng suất render; `requires` để chặn khi chưa duyệt; `outputs` để khung kiểm file có thật.
 3. `vidagents doctor` → bảng ✔/✘ cho biết còn thiếu lệnh nào.

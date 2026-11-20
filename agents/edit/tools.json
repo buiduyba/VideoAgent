@@ -4,7 +4,8 @@
     "B": "preview (B): adapter của khung (adapters/preview_b.py) gọi `hyperframes render` của skill rồi ép xuống 540 px để critic + người duyệt xem trước duyệt 2. Cờ soft: hỏng thì job vẫn đi tiếp và báo rõ. rebuild chưa khai báo (skill build đã dựng lại được bằng --skip-base khi chỉ đổi chữ).",
     "C": "Chế độ C: xem references/che-do-c.md của skill. Script có sẵn trong scripts/montage: beat_grid, color_match, export_clips, reframe, assemble, caps_hoicho, build_hf (build); finish.py (render).",
     "A": "Chế độ A: xem references/che-do-a.md; TTS ElevenLabs cần requires=cost_ok.",
-    "S": "chưa tích hợp"
+    "S": "chưa tích hợp",
+    "project": "build/render truyền --project {project_dir}: skill mặc định đặt tên thư mục theo ngày CHẠY build, còn khung tính theo ngày TẠO job; job qua ngày sẽ lệch thư mục nếu không truyền."
   },
   "actions": {
     "build": {
@@ -24,7 +25,9 @@
             "--name",
             "{name}",
             "{*style_args}",
-            "--no-preview"
+            "--no-preview",
+            "--project",
+            "{project_dir}"
           ],
           "timeout": 3600,
           "heavy": true,
@@ -48,7 +51,9 @@
             "render",
             "{footage}",
             "--name",
-            "{name}"
+            "{name}",
+            "--project",
+            "{project_dir}"
           ],
           "timeout": 3600,
           "heavy": true,

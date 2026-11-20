@@ -22,6 +22,10 @@ from .config import Config
 
 MARKER = ".delivered"
 RESULT_DOCS = ("script.md", "edl.json", "brief.md")
+TRANSCRIPTS = Path("edit") / "transcripts"   # nơi skill (video-use) để bản nhận dạng lời: <tên clip>.json
+_MEDIA = {"video": (".mp4", ".mov", ".mkv", ".m4v", ".avi", ".mts", ".m2ts", ".wmv", ".webm"),
+          "ảnh": (".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"),
+          "âm thanh": (".mp3", ".wav", ".m4a", ".aac", ".flac")}
 
 
 class StageError(Exception):
@@ -36,6 +40,57 @@ class StageResult:
     total_bytes: int = 0
     skipped_dirs: list = field(default_factory=list)
     skipped_files: list = field(default_factory=list)
+    transcripts_reused: int = 0   # bản nhận dạng lời lấy lại từ footage gốc (khỏi gọi Scribe, khỏi tốn tiền)
+
+
+def media_summary(d: Path, depth: int = 3) -> str:
+    """'3 video, 12 ảnh' trong một thư mục (đi xuống tối đa `depth` cấp, bỏ thư mục edit). Rỗng nếu không có gì."""
+    count = {k: 0 for k in _MEDIA}
+
+    def walk(p: Path, left: int) -> None:
+        try:
+            for x in p.iterdir():
+                if x.is_dir():
+                    if left > 1 and x.name.lower() != "edit":
+                        walk(x, left - 1)
+                    continue
+                for k, exts in _MEDIA.items():
+                    if x.suffix.lower() in exts:
+                        count[k] += 1
+                        break
+        except OSError:
+            pass
+
+    walk(d, depth)
+    return ", ".join(f"{n} {k}" for k, n in count.items() if n)
+
+
+def seed_transcripts(src: Path, work: Path, files: list[Path]) -> int:
+    """Chép bản nhận dạng lời đã có ở `<footage gốc>\\edit\\transcripts` sang bản làm việc, cho đúng các clip được chép.
+    Skill thấy đã có thì không gọi Scribe nữa (cache theo tên clip). Không ghi đè bản đã có trong thư mục làm việc."""
+    have, dst = Path(src) / TRANSCRIPTS, Path(work) / TRANSCRIPTS
+    n = 0
+    for f in files:
+        t = have / f"{f.stem}.json"
+        if t.is_file() and not (dst / t.name).exists():
+            dst.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(t, dst / t.name)
+            n += 1
+    return n
+
+
+def return_transcripts(src: Path, work: Path) -> int:
+    """Chép bản nhận dạng lời mới làm trong job về footage gốc để job sau dùng lại. Không đè file đã có ở NAS."""
+    have, dst = Path(work) / TRANSCRIPTS, Path(src) / TRANSCRIPTS
+    if not have.is_dir():
+        return 0
+    n = 0
+    for t in have.glob("*.json"):
+        if not (dst / t.name).exists():
+            dst.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(t, dst / t.name)
+            n += 1
+    return n
 
 
 def free_bytes(path: Path) -> int:
@@ -78,8 +133,13 @@ def stage_footage(cfg: Config, job_id: str, src: Path, on_start: Callable[[int, 
     except OSError as e:
         raise StageError(f"Không đọc được thư mục footage ({e.__class__.__name__}). NAS có đang kết nối không?") from e
     if not files:
+        # hộp chọn thư mục của Windows không hiện file nên người giao dễ đưa nhầm thư mục cha: chỉ ra thư mục con nào có media
+        subs = [(d, media_summary(src / d)) for d in skipped_dirs]
+        subs = [f"{d} ({m})" for d, m in subs if m]
+        hint = (" Media nằm trong thư mục con: " + "; ".join(subs[:6]) + ". Giao lại với đường dẫn tới thư mục con cần dựng."
+                if subs else " Thư mục con không được chép.")
         raise StageError("Thư mục footage không có file clip/ảnh/âm thanh nào ở cấp trên cùng "
-                         f"(đuôi nhận: {', '.join(cfg.work_copy_exts)}). Thư mục con không được chép.")
+                         f"(đuôi nhận: {', '.join(cfg.work_copy_exts)})." + hint)
     work = cfg.work_path / job_id
     todo = [f for f in files if not _same(f, work / f.name)]
     need = sum(f.stat().st_size for f in todo)
@@ -99,19 +159,22 @@ def stage_footage(cfg: Config, job_id: str, src: Path, on_start: Callable[[int, 
         except OSError as e:
             part.unlink(missing_ok=True)
             raise StageError(f"Chép '{f.name}' lỗi ({e.__class__.__name__}): {e}") from e
+    seeded = seed_transcripts(src, work, files)
     return StageResult(work, copied=len(todo), reused=len(files) - len(todo), total_bytes=total,
-                       skipped_dirs=skipped_dirs, skipped_files=skipped_files)
+                       skipped_dirs=skipped_dirs, skipped_files=skipped_files, transcripts_reused=seeded)
 
 
 def deliver_results(source_dir: Path, work_dir: Path, job_id: str, outputs: dict) -> Path:
     """Chép kết quả về `<footage gốc>\\edit\\<mã job>\\`. Thành công mới đánh dấu .delivered (cho phép dọn)."""
     dest = Path(source_dir) / "edit" / job_id
     dest.mkdir(parents=True, exist_ok=True)
-    wanted = [Path(v) for v in outputs.values() if isinstance(v, str)]
+    # gói chỉnh tay (videofac_*) đã nằm sẵn trên NAS và chỉ là file phục vụ người chỉnh: không chép lại thành "kết quả"
+    wanted = [Path(v) for k, v in outputs.items() if isinstance(v, str) and not k.startswith("videofac_")]
     wanted += [Path(work_dir) / "edit" / n for n in RESULT_DOCS]
     for p in wanted:
         if p.is_file():
             shutil.copy2(p, dest / p.name)
+    return_transcripts(Path(source_dir), Path(work_dir))   # job sau cùng footage khỏi gọi Scribe lại
     (Path(work_dir) / MARKER).write_text(datetime.now().isoformat(timespec="seconds"), encoding="utf-8")
     return dest
 
