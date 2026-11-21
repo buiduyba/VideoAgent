@@ -10,15 +10,19 @@ job xong mà chưa chép được kết quả về NAS cũng không bị dọn.
 """
 from __future__ import annotations
 
+import contextlib
+import hashlib
+import os
 import shutil
 import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterator
 
 from .config import Config
+from .locks import SlotLock
 
 MARKER = ".delivered"
 RESULT_DOCS = ("script.md", "edl.json", "brief.md")
@@ -65,6 +69,29 @@ def media_summary(d: Path, depth: int = 3) -> str:
     return ", ".join(f"{n} {k}" for k, n in count.items() if n)
 
 
+def _atomic_copy(src: Path, dst: Path) -> None:
+    """Chép vào file tạm cùng thư mục rồi đổi tên một phát: người đọc (job khác đang lấy bản nhận dạng) chỉ thấy file đủ hoặc chưa có,
+    không bao giờ thấy file đang chép dở. copy2 thẳng vào đích thì để lộ file dở; trên NAS chậm càng dễ trúng.
+    Windows báo PermissionError khi hai luồng cùng đổi tên đè lên một file đích (hoặc có người đang mở nó): nếu đích đã có file
+    thì job khác đã đưa lên đúng bản đó (cache theo tên clip), coi như xong; chưa có thì thử lại ít lần."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    part = dst.with_name(f"{dst.name}.{os.getpid()}.{threading.get_ident()}.part")
+    try:
+        shutil.copy2(src, part)
+        for attempt in range(40):
+            try:
+                os.replace(part, dst)
+                return
+            except PermissionError:
+                if dst.exists() or attempt == 39:
+                    if dst.exists():
+                        return
+                    raise
+                time.sleep(0.05)
+    finally:
+        part.unlink(missing_ok=True)
+
+
 def seed_transcripts(src: Path, work: Path, files: list[Path]) -> int:
     """Chép bản nhận dạng lời đã có ở `<footage gốc>\\edit\\transcripts` sang bản làm việc, cho đúng các clip được chép.
     Skill thấy đã có thì không gọi Scribe nữa (cache theo tên clip). Không ghi đè bản đã có trong thư mục làm việc."""
@@ -73,8 +100,7 @@ def seed_transcripts(src: Path, work: Path, files: list[Path]) -> int:
     for f in files:
         t = have / f"{f.stem}.json"
         if t.is_file() and not (dst / t.name).exists():
-            dst.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(t, dst / t.name)
+            _atomic_copy(t, dst / t.name)
             n += 1
     return n
 
@@ -87,10 +113,20 @@ def return_transcripts(src: Path, work: Path) -> int:
     n = 0
     for t in have.glob("*.json"):
         if not (dst / t.name).exists():
-            dst.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(t, dst / t.name)
+            _atomic_copy(t, dst / t.name)
             n += 1
     return n
+
+
+@contextlib.contextmanager
+def footage_lock(cfg: Config, source: Path, owner: str, on_tick: Callable[[], None] | None = None) -> Iterator[int]:
+    """Mỗi thư mục footage gốc chỉ MỘT job được nhận dạng lời (gọi Scribe, tính tiền) tại một thời điểm. Job đến sau chờ job trước làm xong,
+    lấy bản nhận dạng của job trước rồi chạy tiếp (không gọi Scribe lần hai). Khóa theo đường dẫn đã chuẩn hóa nên viết hoa/thường hay dấu gạch
+    ngược khác nhau vẫn là một thư mục. Khóa bằng file như khóa render nên bền qua tiến trình và tự hết hạn nếu tiến trình chết."""
+    key = hashlib.sha1(os.path.normcase(os.path.normpath(str(Path(source).resolve()))).encode("utf-8")).hexdigest()[:12]
+    lock = SlotLock(cfg.locks_dir, 1, cfg.lock_stale_s, poll_s=0.2, name=f"footage-{key}")
+    with lock.hold(owner, timeout=cfg.lock_timeout_s, on_tick=on_tick) as slot:
+        yield slot
 
 
 def free_bytes(path: Path) -> int:

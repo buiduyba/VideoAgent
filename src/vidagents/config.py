@@ -45,7 +45,8 @@ class Config:
     max_critic_rounds: int = 2  # nguyên tắc 5
     max_revisions: int = 5  # số lần người duyệt được yêu cầu sửa trước khi hỏi lại
     max_info_rounds: int = 3
-    light_workers: int = 4  # số job chạy bước nhẹ cùng lúc
+    light_workers: int = 4  # số job chạy bước NHẸ cùng lúc (job đang chờ/chạy bước nặng không chiếm chỗ này)
+    job_threads: int = 64  # tổng số luồng của bộ chạy job: gồm cả luồng đang chờ suất render nên phải lớn hơn light_workers nhiều
     default_model: str = "claude-sonnet-5-5"
     models: dict = field(default_factory=dict)  # {"script": "...", "critic": "..."}
     # Mức "suy nghĩ" của model theo từng agent: low | medium | high | xhigh | max. Chữ AI viết ra (kể cả suy nghĩ) chiếm ~72% chi phí,
@@ -53,6 +54,15 @@ class Config:
     efforts: dict = field(default_factory=dict)
     # Hỏi đáp tự do trong chat (chat.py): hạn mức USD mỗi người mỗi ngày (None = không giới hạn). Model: models.chat, mặc định Claude Haiku 5.5.
     chat_daily_usd: float | None = 0.30
+    # hỏi hàng ngày "hôm nay dựng video nào" (daily.py). Mặc định TẮT: bật bằng "daily": {"enabled": true} trong config.json
+    daily_enabled: bool = False
+    daily_times: list = field(default_factory=lambda: ["08:30", "21:00"])
+    daily_days: list = field(default_factory=lambda: [0, 1, 2, 3, 4, 5])   # 0 = thứ Hai ... 6 = Chủ nhật
+    daily_grace_min: int = 120   # bot khởi động trễ thì vẫn hỏi bù trong chừng này phút sau mốc giờ
+    daily_max_candidates: int = 12
+    daily_max_jobs: int | None = None      # trần số job mỗi ngày (None = chưa đặt; sẽ đề xuất sau khi chạy thực tế)
+    daily_budget_usd: float | None = None  # trần chi phí AI mỗi ngày (None = chưa đặt)
+    heavy_minutes_per_job: float = 8.1     # phút việc nặng (dựng + xem trước + render) mỗi video, đo ngày 18/11: dùng để ước tính giờ xong
     # Tài nguyên project (logo, ảnh sản phẩm, video AI): tổng dung lượng video AI tối đa chép về mỗi job (MB)
     project_assets_max_mb: int = 1500
     ffmpeg: str = "ffmpeg"
@@ -120,11 +130,20 @@ class Config:
             max_revisions=int(raw.get("max_revisions", 5)),
             max_info_rounds=int(raw.get("max_info_rounds", 3)),
             light_workers=int(raw.get("light_workers", 4)),
+            job_threads=int(raw.get("job_threads", 64)),
             default_model=raw.get("models", {}).get("default", "claude-sonnet-5-5"),
             models={k: v for k, v in raw.get("models", {}).items() if k != "default" and v},
             efforts=_efforts(raw.get("efforts", {})),
             project_assets_max_mb=int(raw.get("project_assets_max_mb", 1500)),
             chat_daily_usd=(None if raw.get("chat_daily_usd", 0.30) is None else float(raw.get("chat_daily_usd", 0.30))),
+            daily_enabled=bool(raw.get("daily", {}).get("enabled", False)),
+            daily_times=[str(x) for x in raw.get("daily", {}).get("times", ["08:30", "21:00"])],
+            daily_days=[int(x) for x in raw.get("daily", {}).get("days", [0, 1, 2, 3, 4, 5])],
+            daily_grace_min=int(raw.get("daily", {}).get("grace_minutes", 120)),
+            daily_max_candidates=int(raw.get("daily", {}).get("max_candidates", 12)),
+            daily_max_jobs=(None if raw.get("daily", {}).get("max_jobs_per_day") is None else int(raw["daily"]["max_jobs_per_day"])),
+            daily_budget_usd=(None if raw.get("daily", {}).get("budget_usd_per_day") is None else float(raw["daily"]["budget_usd_per_day"])),
+            heavy_minutes_per_job=float(raw.get("daily", {}).get("heavy_minutes_per_job", 8.1)),
             videofac_import=_p(base, raw.get("videofac_import")),
             node_exe=raw.get("node", "node"),
             ffmpeg=raw.get("ffmpeg", "ffmpeg"),

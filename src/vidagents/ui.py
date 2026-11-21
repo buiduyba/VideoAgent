@@ -36,7 +36,7 @@ def cb(code: str, job_id: str, arg: str = "") -> str | None:
 def parse_cb(data: str) -> tuple[str, str, str, str] | None:
     """'j|ok|<job>[|arg]' -> ('j', 'ok', job, arg)."""
     parts = (data or "").split("|")
-    if len(parts) < 3 or len(parts) > 4 or parts[0] not in ("j", "m", "w", "t"):
+    if len(parts) < 3 or len(parts) > 4 or parts[0] not in ("j", "m", "w", "t", "d"):
         return None
     return parts[0], parts[1], parts[2], parts[3] if len(parts) == 4 else ""
 
@@ -123,7 +123,7 @@ def confirm_cancel_keyboard(job_id: str) -> Keyboard:
 
 # ───────────────────────── menu chính ─────────────────────────
 def main_menu(is_admin: bool) -> Keyboard:
-    rows: Keyboard = [[("🎬 Giao việc mới", "m|new|-")],
+    rows: Keyboard = [[("🎬 Giao việc mới", "m|new|-"), ("📅 Hôm nay dựng gì", "m|today|-")],
                       [("📋 Job của tôi", "m|jobs|-"), ("💰 Chi phí", "m|cost|-")],
                       [("🏓 Kiểm tra bot", "m|ping|-"), ("📖 Danh sách lệnh", "m|help|-")]]
     if is_admin:

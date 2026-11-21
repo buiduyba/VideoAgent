@@ -1,6 +1,7 @@
 """Sổ job (SQLite): ai giao, trạng thái gì. Trạng thái chi tiết từng bước nằm ở checkpointer của LangGraph."""
 from __future__ import annotations
 
+import os
 import sqlite3
 from contextlib import closing
 from datetime import datetime
@@ -31,24 +32,56 @@ class JobStore:
         c.row_factory = sqlite3.Row
         return c
 
+    @staticmethod
+    def _next_seq(c: sqlite3.Connection, prefix: str) -> int:
+        """Số thứ tự kế tiếp = số lớn nhất đã dùng + 1 (không đếm số dòng: xóa một job giữa chừng thì đếm sẽ ra mã đã có).
+        So tiền tố bằng substr thay vì LIKE: "_" và "%" trong LIKE khớp ký tự bất kỳ nên mã hai thương hiệu sẽ lẫn nhau."""
+        n = 0
+        for (jid,) in c.execute("SELECT job_id FROM jobs WHERE substr(job_id,1,?)=?", (len(prefix), prefix)):
+            tail = jid[len(prefix):]
+            if tail.isdigit():
+                n = max(n, int(tail))
+        return n + 1
+
     def next_id(self, brand: str) -> str:
-        day = datetime.now().strftime("%Y%m%d")
-        prefix = f"{day}-{brand}-"
+        """Mã job kế tiếp để XEM TRƯỚC. Muốn tạo job thì dùng create_next: lấy mã rồi ghi qua hai lệnh rời nhau sẽ trùng khi có người giao cùng lúc."""
+        prefix = f"{datetime.now().strftime('%Y%m%d')}-{brand}-"
         with closing(self._c()) as c:
-            n = c.execute("SELECT COUNT(*) FROM jobs WHERE job_id LIKE ?", (prefix + "%",)).fetchone()[0]
-        return f"{prefix}{n + 1:02d}"
+            return f"{prefix}{self._next_seq(c, prefix):02d}"
+
+    @staticmethod
+    def _insert(c: sqlite3.Connection, job_id: str, **f) -> None:
+        now = datetime.now().isoformat(timespec="seconds")
+        c.execute(
+            "INSERT INTO jobs(job_id,requester_id,requester_name,brand,video_type,footage_dir,status,stage,note,created_at,updated_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (job_id, str(f.get("requester_id", "")), f.get("requester_name", ""), f.get("brand", ""),
+             f.get("video_type", ""), f.get("footage_dir", ""), f.get("status", "queued"),
+             f.get("stage", "new"), f.get("note", ""), now, now),
+        )
 
     def create(self, job_id: str, **f) -> None:
-        now = datetime.now().isoformat(timespec="seconds")
+        """Tạo job với mã cho trước (mã trùng thì IntegrityError). Giao việc mới dùng create_next."""
         with closing(self._c()) as c:
-            c.execute(
-                "INSERT INTO jobs(job_id,requester_id,requester_name,brand,video_type,footage_dir,status,stage,note,created_at,updated_at)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (job_id, str(f.get("requester_id", "")), f.get("requester_name", ""), f.get("brand", ""),
-                 f.get("video_type", ""), f.get("footage_dir", ""), f.get("status", "queued"),
-                 f.get("stage", "new"), f.get("note", ""), now, now),
-            )
+            self._insert(c, job_id, **f)
             c.commit()
+
+    def create_next(self, slug: str, **f) -> str:
+        """Cấp mã mới VÀ ghi job trong MỘT giao dịch: BEGIN IMMEDIATE giữ khóa ghi từ lúc đọc số thứ tự tới lúc ghi,
+        nên nhiều luồng hoặc nhiều tiến trình (bot, dòng lệnh) cùng giao cũng không bao giờ ra hai mã giống nhau.
+        Luồng đến sau chờ tới `timeout` (30 giây) rồi mới báo lỗi, thực tế vài mili giây.
+        `slug`: phần thương hiệu trong mã job (chỉ chữ không dấu); cột brand lưu giá trị trong f["brand"], không có thì lấy slug."""
+        prefix = f"{datetime.now().strftime('%Y%m%d')}-{slug}-"
+        with closing(self._c()) as c:
+            c.execute("BEGIN IMMEDIATE")
+            try:
+                job_id = f"{prefix}{self._next_seq(c, prefix):02d}"
+                self._insert(c, job_id, **{"brand": slug, **f})
+                c.commit()
+            except BaseException:
+                c.rollback()
+                raise
+        return job_id
 
     def update(self, job_id: str, **f) -> None:
         f = {k: v for k, v in f.items() if k in _COLS}
@@ -62,6 +95,19 @@ class JobStore:
         with closing(self._c()) as c:
             r = c.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
         return dict(r) if r else None
+
+    @staticmethod
+    def _footage_key(p: str | None) -> str:
+        return os.path.normcase(os.path.normpath(p or "")) if p else ""
+
+    def same_footage(self, job_id: str) -> list[dict]:
+        """Các job KHÁC đang chạy/chờ trên cùng thư mục footage với job này (so đường dẫn đã chuẩn hóa: hoa thường, dấu gạch).
+        Dùng để cảnh báo người giao; không chặn gì vì cùng footage vẫn có thể là video khác (khác thương hiệu, khác dạng)."""
+        me = self.get(job_id)
+        key = self._footage_key(me and me.get("footage_dir"))
+        if not key:
+            return []
+        return [j for j in self.list(None, active_only=True) if j["job_id"] != job_id and self._footage_key(j.get("footage_dir")) == key]
 
     def stalled(self, minutes: float, now: datetime | None = None) -> list[dict]:
         """Job đang chạy/xếp hàng mà không có cập nhật nào quá `minutes` phút và CHƯA được báo cho mốc cập nhật này.

@@ -57,6 +57,17 @@
   "preview_quality": "",
   "_ghi_chu_pricing": "pricing: USD cho 1 triệu token. Số mặc định trong code chỉ là THAM KHẢO (nguồn thứ ba, chưa đối chiếu trang giá chính thức của Anthropic): phải kiểm rồi điền lại ở đây. Model thiếu giá thì chỉ đếm token, không đoán tiền. max_cost_per_job_usd: trần chi phí AI mỗi job (null = không giới hạn).",
   "_ghi_chu_canh": "stall_minutes: quá số phút này không nhúc nhích thì báo Telegram. preview_quality: để trống; điền sau khi xem `npx.cmd hyperframes render --help`.",
+  "daily": {
+    "enabled": false,
+    "times": ["08:30", "21:00"],
+    "days": [0, 1, 2, 3, 4, 5],
+    "grace_minutes": 120,
+    "max_candidates": 12,
+    "max_jobs_per_day": null,
+    "budget_usd_per_day": null,
+    "heavy_minutes_per_job": 8.1
+  },
+  "_ghi_chu_daily": "Hỏi hàng ngày \"hôm nay dựng video nào\" cho mọi người được phép chat với bot. enabled: bật lượt hỏi TỰ ĐỘNG (lệnh /homnay luôn dùng được, không cần bật). times: các mốc giờ trong ngày. days: thứ nào có hỏi (0 = thứ Hai ... 6 = Chủ nhật). grace_minutes: bot khởi động trễ thì vẫn hỏi bù trong chừng này phút sau mốc giờ. max_jobs_per_day / budget_usd_per_day: trần mỗi ngày (null = chưa đặt, bot vẫn hiện số liệu hôm nay để đề xuất trần sau khi chạy thực tế). heavy_minutes_per_job: phút việc nặng mỗi video, dùng để ước tính giờ xong.",
   "scribe_auto_max_minutes": null,
   "_ghi_chu_scribe": "scribe_auto_max_minutes: số phút âm thanh tối đa được tự gửi ElevenLabs Scribe mỗi job (đã có transcript thì không tính). null = lần nào cần gọi cũng hỏi qua Telegram."
 }
